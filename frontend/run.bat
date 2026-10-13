@@ -1,0 +1,3 @@
+@echo off
+echo Starting React + Vite Frontend on port 5173...
+call npm run dev

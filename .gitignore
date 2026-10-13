@@ -1,0 +1,32 @@
+# Local credentials and configuration
+backend/src/main/resources/application.properties
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Java build output
+backend/target/
+# Local Java dependency bundles
+backend/lib/
+backend/jvm_args.txt
+
+# Python environments and cache
+python-service/.venv/
+python-service/venv/
+**/__pycache__/
+*.py[cod]
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and local uploads
+*.log
+data/uploads/
+uploads/

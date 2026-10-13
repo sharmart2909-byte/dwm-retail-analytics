@@ -1,0 +1,3 @@
+@echo off
+echo Starting Spring Boot Backend on port 8080...
+java -Dorg.jboss.logging.provider=slf4j --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.invoke=ALL-UNNAMED -cp "target\classes;lib\*" com.retail.dw.RetailDwApplication
