@@ -20,11 +20,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for Spring Boot & React frontend
+# Enable CORS — explicit origins for local dev; Spring Boot sits in front for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:8080",   # Spring Boot (backend-to-backend not needed but harmless)
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,       # FastAPI issues no cookies; wildcard + credentials is a CORS spec violation
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -52,22 +56,63 @@ def health_check():
         "data_rows": len(preprocessor.cleaned_df) if preprocessor.cleaned_df is not None else 0
     }
 
-@app.post("/api/data/preprocess")
-async def preprocess_dataset(file: Optional[UploadFile] = File(None)):
+@app.post("/api/data/inspect")
+async def inspect_dataset(file: Optional[UploadFile] = File(None)):
     """
-    Accepts CSV upload or loads default dataset,
-    runs full preprocessing pipeline, and returns audit metrics.
+    Inspects CSV or Excel (.xlsx) file headers, detects column mappings,
+    and returns raw preview without destructive loading.
     """
     try:
         if file is not None and file.filename != '':
             contents = await file.read()
-            df = preprocessor.load_from_bytes(contents)
+            df = preprocessor.load_from_bytes(contents, filename=file.filename)
         else:
             if not os.path.exists(DEFAULT_CSV_PATH):
                 raise HTTPException(status_code=404, detail="Default sample CSV not found.")
             df = preprocessor.load_from_path(DEFAULT_CSV_PATH)
 
-        cleaned_df, summary = preprocessor.preprocess(df)
+        inspection = preprocessor.detect_columns(df)
+        raw_preview = df.head(10).fillna('').to_dict(orient='records')
+
+        return {
+            "success": True,
+            "filename": file.filename if file else "online_retail_sample.csv",
+            "inspection": inspection,
+            "sample_rows": raw_preview
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inspection failed: {str(e)}")
+
+@app.post("/api/data/preprocess")
+async def preprocess_dataset(
+    file: Optional[UploadFile] = File(None),
+    mapping: Optional[str] = Form(None)
+):
+    """
+    Accepts CSV or Excel (.xlsx) upload or loads default dataset.
+    Applies custom or auto-detected column mapping, executes full cleaning pipeline,
+    and returns audit metrics.
+    """
+    import json
+    try:
+        column_mapping = None
+        if mapping:
+            try:
+                column_mapping = json.loads(mapping)
+            except Exception:
+                column_mapping = None
+
+        if file is not None and file.filename != '':
+            contents = await file.read()
+            df = preprocessor.load_from_bytes(contents, filename=file.filename)
+        else:
+            if not os.path.exists(DEFAULT_CSV_PATH):
+                raise HTTPException(status_code=404, detail="Default sample CSV not found.")
+            df = preprocessor.load_from_path(DEFAULT_CSV_PATH)
+
+        cleaned_df, summary = preprocessor.preprocess(df, mapping=column_mapping)
 
         preview_records = cleaned_df.head(50).fillna('').to_dict(orient='records')
         # Serialize timestamps
@@ -81,6 +126,8 @@ async def preprocess_dataset(file: Optional[UploadFile] = File(None)):
             "summary": summary,
             "preview": preview_records
         }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Preprocessing failed: {str(e)}")
 

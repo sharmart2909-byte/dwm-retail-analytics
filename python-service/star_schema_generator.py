@@ -69,7 +69,8 @@ class StarSchemaGenerator:
             total = round(float(row['TotalAmount']), 2)
             fact_sales.append({
                 "customer_id": str(row['CustomerID']),
-                "product_id": int(row['Product_ID']),
+                "stock_code": str(row['StockCode']).strip(),   # used by Java to resolve DB product_id
+                "product_id": int(row['Product_ID']),           # kept for reference; Java now ignores this
                 "date_id": int(row['Date_Key']),
                 "quantity": qty,
                 "unit_price": price,

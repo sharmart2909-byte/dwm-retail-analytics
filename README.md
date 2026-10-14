@@ -362,30 +362,57 @@ run.bat
 
 ### Spring Boot Backend (`http://localhost:8080`)
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/dashboard/stats` | Warehouse summary KPIs, monthly revenue, top products |
-| `GET` | `/api/warehouse/summary` | Table row counts and star schema status |
-| `GET` | `/api/warehouse/tables/{table}` | Sample rows from specified table |
-| `GET` | `/api/olap/rollup?dimension={time\|product}` | Multidimensional roll-up aggregation |
-| `GET` | `/api/olap/drilldown?country={c}&year={y}` | Granular transaction drill-down |
-| `GET` | `/api/olap/slice?country={c}` | 2D dimensional slice |
-| `GET` | `/api/olap/dice?countries={c}&year={y}&quarters={q}` | Multi-dimensional dice sub-cube |
-| `GET` | `/api/analytics/regression` | Simple and Multiple Linear Regression metrics |
-| `GET` | `/api/analytics/naive-bayes` | Naive Bayes classification metrics & confusion matrix |
-| `GET` | `/api/analytics/clustering` | RFM customer segmentation with K-Means & Agglomerative |
-| `GET` | `/api/analytics/recommend?stockCode={code}` | Apriori association rules & product recommendations |
+#### Authentication & Authorization
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/login` | Public | Authenticates credentials and returns Bearer token + user profile |
+| `POST` | `/api/auth/register` | Public | Customer registration portal |
+| `GET` | `/api/auth/me` | Authenticated | Retrieves current logged-in user session profile |
+| `POST` | `/api/auth/logout` | Authenticated | Terminates active user session |
+
+#### Customer Portal Experience
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/customer/catalog` | Public/Customer | Browse catalog products with keyword search |
+| `GET` | `/api/customer/orders` | Customer | Order history from warehouse for current authenticated customer |
+| `GET` | `/api/customer/recommendations` | Customer | Personalized item suggestions based on purchase history |
+
+#### Administrator & Data Management
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/dashboard/stats` | Public | Warehouse summary KPIs, monthly revenue, top products, service health |
+| `POST` | `/api/dataset/inspect` | Admin | Non-destructive schema inspection and column alias detection |
+| `POST` | `/api/dataset/upload` | Admin | Preprocessing with custom column mapping & validation audit |
+| `GET` | `/api/dataset/preview` | Admin | Preview of cleaned records |
+| `GET` | `/api/warehouse/overview` | Admin | Table row counts and star schema status |
+| `GET` | `/api/warehouse/table/{table}`| Admin | Sample records from specified table |
+| `POST` | `/api/warehouse/sync-etl` | Admin | Safe staging table validation and atomic transactional swap |
+| `GET` | `/api/olap/rollup` | Admin | Multidimensional roll-up aggregation |
+| `GET` | `/api/olap/drilldown` | Admin | Granular transaction drill-down |
+| `GET` | `/api/olap/slice` | Admin | Parameterized 2D dimensional slice |
+| `GET` | `/api/olap/dice` | Admin | Multi-dimensional dice sub-cube |
+| `GET` | `/api/analytics/regression` | Admin | Simple and Multiple Linear Regression metrics |
+| `GET` | `/api/analytics/naive-bayes`| Admin | Naive Bayes classification metrics & confusion matrix |
+| `GET` | `/api/analytics/clustering` | Admin | RFM customer segmentation with K-Means & Agglomerative |
+| `POST`| `/api/analytics/recommend` | Admin/Customer | Market basket association rules & cross-sell suggestions |
+| `GET` | `/api/analytics/comparison`| Admin | Direct algorithmic performance evaluation |
 
 ### Python Data Mining Engine (`http://127.0.0.1:8000`)
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/preprocess` | Cleans raw Online Retail CSV and returns audit summary |
-| `POST` | `/api/mine/regression` | Trains linear regression models and returns MAE/MSE/R² |
-| `POST` | `/api/mine/naive-bayes` | Evaluates GaussianNB classifier on customer data |
-| `POST` | `/api/mine/clustering` | Computes RFM, K-Means elbow, and Agglomerative clusters |
-| `POST` | `/api/mine/association-rules` | Mines frequent itemsets and association rules via Apriori |
-| `GET` | `/docs` | Interactive Swagger / OpenAPI documentation |
+| `GET`  | `/health` | Service health status and data readiness |
+| `POST` | `/api/data/inspect` | Detects CSV/Excel columns, aliases, and sample rows without modifying state |
+| `POST` | `/api/data/preprocess` | Cleans CSV or Excel (.xlsx) dataset with optional column mappings |
+| `GET`  | `/api/data/preview` | Returns preview records and audit summary |
+| `POST` | `/api/data/star-schema` | Generates Star Schema entities (`dim_customer`, `dim_product`, `dim_date`, `fact_sales`) |
+| `POST` | `/api/ml/regression` | Evaluates Simple and Multiple Linear Regression models |
+| `POST` | `/api/ml/naive-bayes` | Evaluates Gaussian Naive Bayes classifier on customer profiles |
+| `POST` | `/api/ml/clustering` | Computes RFM, K-Means elbow, and Agglomerative clusters |
+| `POST` | `/api/ml/apriori` | Mines frequent itemsets and association rules via Apriori |
+| `POST` | `/api/ml/recommend` | Product recommendations using Apriori rules and co-occurrence patterns |
+| `GET`  | `/api/ml/comparison` | Objective algorithm comparison (K-Means vs Agglomerative, Simple vs Multiple) |
+| `GET`  | `/docs` | Interactive Swagger / OpenAPI documentation |
 
 ---
 

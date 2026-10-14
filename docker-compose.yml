@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # =====================================================================
+  # Service 1: MySQL 8.0 Relational Data Warehouse
+  # =====================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: retail-dw-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-retail_dw_secret}
+      MYSQL_DATABASE: retail_dw
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/1_schema.sql:ro
+      - ./database/seed_data.sql:/docker-entrypoint-initdb.d/2_seed_data.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-retail_dw_secret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =====================================================================
+  # Service 2: Python FastAPI Data Mining Engine (Port 8000)
+  # =====================================================================
+  python-service:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    container_name: retail-dw-python
+    restart: always
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # =====================================================================
+  # Service 3: Spring Boot 3 Java Backend (Port 8080)
+  # =====================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: retail-dw-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      python-service:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/retail_dw?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-retail_dw_secret}
+      PYTHON_SERVICE_URL: http://python-service:8000
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
+      PORT: 8080
+    ports:
+      - "8080:8080"
+
+  # =====================================================================
+  # Service 4: React + Vite Frontend (Port 80 / 5173)
+  # =====================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api}
+    container_name: retail-dw-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql_data:

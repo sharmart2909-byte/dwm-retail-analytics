@@ -94,3 +94,26 @@ FROM fact_sales f
 JOIN dim_customer c ON f.customer_id = c.customer_id
 JOIN dim_product p ON f.product_id = p.product_id
 JOIN dim_date d ON f.date_id = d.date_id;
+
+-- =====================================================================
+-- Staging Table: fact_sales_staging
+-- Temporary staging area for transactional replacement and safe ETL
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS fact_sales_staging LIKE fact_sales;
+
+-- =====================================================================
+-- Authentication Table: app_user
+-- Stores Administrator and Customer credentials with PBKDF2 hashes
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS app_user (
+    id BIGINT AUTO_INCREMENT NOT NULL,
+    username VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,            -- 'ADMIN' or 'CUSTOMER'
+    full_name VARCHAR(150),
+    customer_id VARCHAR(50),             -- Linked to dim_customer
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_username (username),
+    KEY idx_user_customer (customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -42,8 +42,8 @@ public class PythonServiceBridge {
         }
     }
 
-    public Map<String, Object> preprocessFile(MultipartFile file) {
-        String url = pythonServiceUrl + "/api/data/preprocess";
+    public Map<String, Object> inspectFile(MultipartFile file) {
+        String url = pythonServiceUrl + "/api/data/inspect";
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -62,9 +62,64 @@ public class PythonServiceBridge {
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
             ResponseEntity<Map> response = restTemplate.postForEntity(url, requestEntity, Map.class);
             return response.getBody();
+        } catch (org.springframework.web.client.HttpStatusCodeException hsce) {
+            log.warn("Python inspect returned status {}: {}", hsce.getStatusCode(), hsce.getResponseBodyAsString());
+            Map<String, Object> err = new HashMap<>();
+            err.put("success", false);
+            err.put("status", hsce.getStatusCode().value());
+            err.put("error", hsce.getResponseBodyAsString());
+            return err;
+        } catch (Exception e) {
+            log.error("Error communicating with Python inspect endpoint: {}", e.getMessage());
+            Map<String, Object> err = new HashMap<>();
+            err.put("success", false);
+            err.put("status", 503);
+            err.put("error", "Python service unreachable: " + e.getMessage());
+            return err;
+        }
+    }
+
+    public Map<String, Object> preprocessFile(MultipartFile file) {
+        return preprocessFile(file, null);
+    }
+
+    public Map<String, Object> preprocessFile(MultipartFile file, String mappingJson) {
+        String url = pythonServiceUrl + "/api/data/preprocess";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            if (file != null && !file.isEmpty()) {
+                ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return file.getOriginalFilename() != null ? file.getOriginalFilename() : "dataset.csv";
+                    }
+                };
+                body.add("file", fileResource);
+            }
+            if (mappingJson != null && !mappingJson.isBlank()) {
+                body.add("mapping", mappingJson);
+            }
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, requestEntity, Map.class);
+            return response.getBody();
+        } catch (org.springframework.web.client.HttpStatusCodeException hsce) {
+            log.warn("Python preprocess returned status {}: {}", hsce.getStatusCode(), hsce.getResponseBodyAsString());
+            Map<String, Object> err = new HashMap<>();
+            err.put("success", false);
+            err.put("status", hsce.getStatusCode().value());
+            err.put("error", hsce.getResponseBodyAsString());
+            return err;
         } catch (Exception e) {
             log.error("Error communicating with Python preprocessing service: {}", e.getMessage());
-            throw new RuntimeException("Python Preprocessing Service Error: " + e.getMessage(), e);
+            Map<String, Object> err = new HashMap<>();
+            err.put("success", false);
+            err.put("status", 503);
+            err.put("error", "Python Preprocessing Service unreachable: " + e.getMessage());
+            return err;
         }
     }
 
@@ -150,6 +205,21 @@ public class PythonServiceBridge {
         } catch (Exception e) {
             log.error("Error running algorithm comparison on Python service: {}", e.getMessage());
             throw new RuntimeException("Python Comparison Service Error: " + e.getMessage(), e);
+        }
+    }
+
+    public Map<String, Object> getDatasetPreview() {
+        String url = pythonServiceUrl + "/api/data/preview";
+        try {
+            Map result = restTemplate.getForObject(url, Map.class);
+            return result != null ? result : Collections.emptyMap();
+        } catch (Exception e) {
+            log.warn("Dataset preview unavailable from Python service: {}", e.getMessage());
+            Map<String, Object> err = new HashMap<>();
+            err.put("error", "Preview unavailable — ensure the Python service is running and a dataset has been loaded.");
+            err.put("preview", Collections.emptyList());
+            err.put("total_records", 0);
+            return err;
         }
     }
 }

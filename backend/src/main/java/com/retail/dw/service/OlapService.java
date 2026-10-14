@@ -116,6 +116,7 @@ public class OlapService {
         long t0 = System.currentTimeMillis();
         String sql;
         String title;
+        List<Map<String, Object>> rows;
 
         if ("year".equalsIgnoreCase(dimension)) {
             int yearVal = 2011;
@@ -135,6 +136,7 @@ public class OlapService {
                   "WHERE d.year = " + yearVal + " " +
                   "GROUP BY c.country, d.year " +
                   "ORDER BY total_revenue DESC";
+            rows = jdbcTemplate.queryForList(sql);
         } else {
             String countryVal = (value != null && !value.isBlank()) ? value : "United Kingdom";
             title = "OLAP Slice: Filtered by Dimension Country = '" + countryVal + "'";
@@ -149,12 +151,12 @@ public class OlapService {
                   "JOIN dim_customer c ON f.customer_id = c.customer_id " +
                   "JOIN dim_date d ON f.date_id = d.date_id " +
                   "JOIN dim_product p ON f.product_id = p.product_id " +
-                  "WHERE c.country = '" + countryVal.replace("'", "''") + "' " +
+                  "WHERE c.country = ? " +
                   "GROUP BY d.year, d.month, p.stock_code, p.description " +
                   "ORDER BY sliced_revenue DESC LIMIT 30";
+            rows = jdbcTemplate.queryForList(sql, countryVal);
         }
 
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
         long execTime = System.currentTimeMillis() - t0;
 
         Map<String, Object> response = new HashMap<>();

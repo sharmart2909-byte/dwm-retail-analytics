@@ -1,8 +1,9 @@
-$repo = "$env:USERPROFILE\.m2\repository"
-$jars = Get-ChildItem -Path $repo -Filter "*.jar" -Recurse | Where-Object {
-    $_.FullName -notmatch '\\plugins\\|\\maven\\|maven-|surefire|compiler|buildpack|gradle'
-} | Select-Object -ExpandProperty FullName
+$jarPath = Join-Path $PSScriptRoot "target\online-retail-dw-1.0.0.jar"
 
-$cp = ($jars -join ";") + ";target\classes"
-Write-Host "Starting Spring Boot with $($jars.Count) dependency JARs..."
-& java -cp $cp com.retail.dw.OnlineRetailDwApplication
+if (Test-Path $jarPath) {
+    Write-Host "[Spring Boot] Starting from packaged executable JAR: $jarPath" -ForegroundColor Green
+    & java -jar $jarPath
+} else {
+    Write-Host "[Spring Boot] JAR not packaged yet. Starting via Maven spring-boot:run..." -ForegroundColor Cyan
+    & mvn spring-boot:run
+}

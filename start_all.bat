@@ -1,49 +1,45 @@
-@echo off
+ @echo off
+setlocal
 title Online Retail DWM System - Launcher
+
 echo =======================================================================
 echo Online Retail Customer Segmentation and Product Recommendation System
-echo Data Warehousing & Data Mining Academic Project Launcher
+echo Data Warehousing ^& Data Mining Academic Project Launcher
 echo =======================================================================
 echo.
 
-echo [1/4] Verifying project environment...
+echo [1/4] Checking required commands...
 where python >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [WARNING] 'python' command not found in PATH. Please verify Python 3.10+ is installed.
-)
+if errorlevel 1 echo WARNING: Python was not found in PATH.
 
 where java >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [WARNING] 'java' command not found in PATH. Please verify Java 17+ is installed.
-)
+if errorlevel 1 echo WARNING: Java was not found in PATH.
 
 where npm >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [WARNING] 'npm' command not found in PATH. Please verify Node.js 18+ is installed.
-)
+if errorlevel 1 echo WARNING: npm was not found in PATH.
+
+if "%DB_PASSWORD%"=="" echo NOTICE: DB_PASSWORD is not set. The backend may fail if MySQL requires a password.
 
 echo.
-echo [2/4] Starting Python FastAPI Data Mining Engine (Port 8000)...
-start "Python FastAPI Engine (Port 8000)" cmd /k "cd /d \"%~dp0python-service\" && run.bat"
+echo [2/4] Starting Python FastAPI service...
+start "Python FastAPI Engine (Port 8000)" /D "%~dp0python-service" cmd /k "call run.bat"
 timeout /t 3 /nobreak >nul
 
-echo [3/4] Starting Spring Boot 3 Backend (Port 8080)...
-start "Spring Boot Backend (Port 8080)" cmd /k "cd /d \"%~dp0backend\" && run.bat"
-timeout /t 6 /nobreak >nul
+echo [3/4] Starting Spring Boot backend...
+start "Spring Boot Backend (Port 8080)" /D "%~dp0backend" cmd /k "call run.bat"
+timeout /t 5 /nobreak >nul
 
-echo [4/4] Starting React + Vite Frontend (Port 5173)...
-start "React Vite Frontend (Port 5173)" cmd /k "cd /d \"%~dp0frontend\" && run.bat"
-timeout /t 3 /nobreak >nul
+echo [4/4] Starting React frontend...
+start "React Vite Frontend (Port 5173)" /D "%~dp0frontend" cmd /k "call run.bat"
+timeout /t 5 /nobreak >nul
 
 echo.
-echo =======================================================================
-echo All services launched!
+echo Startup commands have been launched.
+echo Check each service window for errors before opening the website.
+echo Frontend: http://localhost:5173
+echo Python API docs: http://localhost:8000/docs
 echo.
-echo Web Application: http://localhost:5173
-echo Spring Boot API: http://localhost:8080/api/dashboard/stats
-echo Python FastAPI:  http://localhost:8000/docs
-echo =======================================================================
-echo Opening application in browser...
-start http://localhost:5173
+start "" "http://localhost:5173"
 
 pause
+endlocal

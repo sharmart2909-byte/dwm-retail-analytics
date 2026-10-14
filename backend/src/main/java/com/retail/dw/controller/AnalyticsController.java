@@ -42,8 +42,9 @@ public class AnalyticsController {
 
     @PostMapping("/recommend")
     public ResponseEntity<Map<String, Object>> getProductRecommendations(@RequestBody Map<String, Object> payload) {
-        String stockCode = (String) payload.getOrDefault("stock_code", "85123A");
-        Integer topN = (Integer) payload.getOrDefault("top_n", 5);
+        String stockCode = String.valueOf(payload.getOrDefault("stock_code", "85123A"));
+        Object topNObj = payload.getOrDefault("top_n", 5);
+        int topN = (topNObj instanceof Number) ? ((Number) topNObj).intValue() : 5;
         return ResponseEntity.ok(pythonServiceBridge.runRecommendation(stockCode, topN));
     }
 

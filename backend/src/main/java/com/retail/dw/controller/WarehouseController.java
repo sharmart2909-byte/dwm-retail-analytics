@@ -33,9 +33,10 @@ public class WarehouseController {
     }
 
     @PostMapping("/sync-etl")
-    public ResponseEntity<Map<String, Object>> syncWarehouseFromEtl() {
+    public ResponseEntity<Map<String, Object>> syncWarehouseFromEtl(
+            @RequestParam(value = "mode", defaultValue = "replace") String mode) {
         Map<String, Object> starSchemaData = pythonServiceBridge.fetchStarSchemaData();
-        Map<String, Object> syncResult = warehouseService.populateFromStarSchemaData(starSchemaData);
+        Map<String, Object> syncResult = warehouseService.populateFromStarSchemaData(starSchemaData, mode);
         return ResponseEntity.ok(syncResult);
     }
 }
