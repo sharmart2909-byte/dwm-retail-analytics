@@ -35,6 +35,7 @@ CREATE TABLE dim_product (
     product_id INT AUTO_INCREMENT NOT NULL,
     stock_code VARCHAR(50) NOT NULL,
     description VARCHAR(255) DEFAULT 'UNKNOWN',
+    unit_price DECIMAL(10,2) DEFAULT 2.99,
     PRIMARY KEY (product_id),
     UNIQUE KEY uq_stock_code (stock_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -94,3 +95,58 @@ FROM fact_sales f
 JOIN dim_customer c ON f.customer_id = c.customer_id
 JOIN dim_product p ON f.product_id = p.product_id
 JOIN dim_date d ON f.date_id = d.date_id;
+
+-- =====================================================================
+-- Staging Table: fact_sales_staging
+-- Temporary staging area for transactional replacement and safe ETL
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS fact_sales_staging LIKE fact_sales;
+
+-- =====================================================================
+-- Authentication Table: app_user
+-- Stores Administrator and Customer credentials with PBKDF2 hashes
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS app_user (
+    id BIGINT AUTO_INCREMENT NOT NULL,
+    username VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,            -- 'ADMIN' or 'CUSTOMER'
+    full_name VARCHAR(150),
+    customer_id VARCHAR(50),             -- Linked to dim_customer
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_username (username),
+    KEY idx_user_customer (customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =====================================================================
+-- Shopping Cart Tables: cart & cart_item
+-- Supports customer cart persistence, quantity tracking, and server-side pricing
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS cart (
+    cart_id BIGINT AUTO_INCREMENT NOT NULL,
+    user_id BIGINT NOT NULL,
+    customer_id VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (cart_id),
+    UNIQUE KEY uq_cart_user (user_id),
+    KEY idx_cart_customer (customer_id),
+    CONSTRAINT fk_cart_user FOREIGN KEY (user_id) REFERENCES app_user (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS cart_item (
+    cart_item_id BIGINT AUTO_INCREMENT NOT NULL,
+    cart_id BIGINT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    unit_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (cart_item_id),
+    UNIQUE KEY uq_cart_product (cart_id, product_id),
+    KEY idx_cart_item_cart (cart_id),
+    KEY idx_cart_item_product (product_id),
+    CONSTRAINT fk_cart_item_cart FOREIGN KEY (cart_id) REFERENCES cart (cart_id) ON DELETE CASCADE,
+    CONSTRAINT fk_cart_item_product FOREIGN KEY (product_id) REFERENCES dim_product (product_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

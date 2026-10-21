@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../api';
 import StatCard from '../components/StatCard';
-import VivaNote from '../components/VivaNote';
 import { ShoppingBag, ArrowRight, Search, Sparkles, RefreshCw } from 'lucide-react';
 
 export default function RecommendationPage() {
-  const [stockCode, setStockCode] = useState('85123A');
+  const [stockCode, setStockCode] = useState('');
   const [aprioriData, setAprioriData] = useState(null);
   const [recData, setRecData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -26,11 +25,15 @@ export default function RecommendationPage() {
     }
   };
 
-  const fetchRecommendations = async (targetCode) => {
+  const fetchRecommendations = async (targetCode = '') => {
     setRecLoading(true);
     try {
       const res = await analyticsApi.getRecommendations(targetCode, 5);
-      setRecData(res.data.data);
+      const data = res.data?.data;
+      setRecData(data);
+      if (data?.query_stock_code) {
+        setStockCode(data.query_stock_code);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -40,7 +43,7 @@ export default function RecommendationPage() {
 
   useEffect(() => {
     fetchApriori();
-    fetchRecommendations(stockCode);
+    fetchRecommendations('');
   }, []);
 
   const handleRecommendClick = () => {
@@ -53,11 +56,24 @@ export default function RecommendationPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2 className="page-title">Market Basket Analysis & Product Recommendation</h2>
-        <p className="page-desc">
-          Association rule mining via Apriori algorithm discovering frequent co-purchase itemsets and generating cross-sell recommendations.
-        </p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h2 className="page-title">Market Basket Analysis & Product Recommendation</h2>
+          <p className="page-desc">
+            Association rule mining via Apriori algorithm discovering frequent co-purchase itemsets and generating cross-sell recommendations.
+          </p>
+        </div>
+        <button
+          className="btn btn-outline"
+          onClick={() => {
+            fetchApriori();
+            fetchRecommendations(stockCode);
+          }}
+          disabled={loading || recLoading}
+        >
+          <RefreshCw size={15} className={loading || recLoading ? 'animate-spin' : ''} />
+          Re-Mine Rules
+        </button>
       </div>
 
       {error && (
@@ -73,13 +89,13 @@ export default function RecommendationPage() {
           Interactive Cross-Sell Recommendation Query
         </h3>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-          Select a product from the retail catalog to evaluate association rules where the product appears in the antecedent set (Item A).
+          Select a product from the active catalog to evaluate association rules where the product appears in the antecedent set (Item A).
         </p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
           <select
             className="select-field"
-            style={{ maxWidth: '420px', flex: 1 }}
+            style={{ maxWidth: '460px', flex: 1 }}
             value={stockCode}
             onChange={(e) => setStockCode(e.target.value)}
           >
@@ -90,54 +106,47 @@ export default function RecommendationPage() {
                 </option>
               ))
             ) : (
-              <>
-                <option value="85123A">[85123A] WHITE HANGING HEART T-LIGHT HOLDER</option>
-                <option value="71053">[71053] WHITE METAL LANTERN</option>
-                <option value="84406B">[84406B] CREAM CUPID HEARTS COAT HANGER</option>
-                <option value="20725">[20725] LUNCH BAG RED RETROSPOT</option>
-                <option value="22728">[22728] ALARM CLOCK BAKELIKE PINK</option>
-              </>
+              <option value="">{recLoading ? 'Loading Catalog...' : 'No products available'}</option>
             )}
           </select>
 
           <button
             className="btn btn-primary"
             onClick={handleRecommendClick}
-            disabled={recLoading}
+            disabled={recLoading || !stockCode}
           >
             <Search size={15} />
             {recLoading ? 'Mining Rules...' : 'Get Recommendations'}
           </button>
         </div>
 
-        {/* Recommendation Results Display */}
         {recData && (
-          <div style={{ marginTop: '20px' }}>
-            <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '10px' }}>
-              Recommended Items for: <span style={{ color: 'var(--accent-primary)' }}>{recData.query_product_name} ({recData.query_stock_code})</span>
-            </h4>
+          <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '10px' }}>
+              Recommendations for: <span style={{ color: 'var(--accent-primary)' }}>[{recData.query_stock_code}] {recData.query_product_name}</span>
+            </div>
 
             {recs.length === 0 ? (
-              <div style={{ padding: '16px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                No strong association rule met the confidence threshold for this specific item. Consider lowering min_support or choosing a more frequent basket item.
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '6px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                No strong association rules found for this specific item at current threshold. Try selecting another high-volume product from the active catalog above.
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-                {recs.map((r, idx) => (
-                  <div key={idx} style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '14px', backgroundColor: '#ffffff' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <span className="badge badge-blue">StockCode: {r.stock_code}</span>
-                      <span className="badge badge-green">Lift: {r.lift}x</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                {recs.map((rec, idx) => (
+                  <div key={idx} className="card" style={{ padding: '14px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <span className="badge badge-blue">Rank #{idx + 1}</span>
+                      <span className="badge badge-green">Lift: {rec.lift}x</span>
                     </div>
-                    <div style={{ fontWeight: 600, fontSize: '13.5px', marginTop: '8px', color: 'var(--text-main)' }}>
-                      {r.description}
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', marginBottom: '6px' }}>
+                      [{rec.stock_code}] {rec.description}
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                      <div><strong>Confidence:</strong> {(r.confidence * 100).toFixed(1)}%</div>
-                      <div><strong>Support:</strong> {(r.support * 100).toFixed(2)}%</div>
-                      <div style={{ marginTop: '4px', fontStyle: 'italic', color: '#1e3a8a' }}>
-                        &bull; {r.recommendation_reason}
-                      </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      {rec.recommendation_reason}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
+                      <span>Confidence: {(rec.confidence * 100).toFixed(1)}%</span>
+                      <span>Support: {(rec.support * 100).toFixed(1)}%</span>
                     </div>
                   </div>
                 ))}
@@ -147,19 +156,23 @@ export default function RecommendationPage() {
         )}
       </div>
 
-      {/* Association Rules Table */}
-      {aprioriData && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 className="card-title" style={{ margin: 0 }}>
-              Top Mined Association Rules (Sorted by Lift & Confidence)
-            </h3>
-            <span className="badge badge-blue">
-              Total Rules Discovered: {aprioriData.association_rules_count}
-            </span>
-          </div>
+      {/* Mined Association Rules Table */}
+      <div className="card">
+        <h3 className="card-title">Mined Frequent Itemsets & Association Rules (Apriori)</h3>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+          Discovering relationships of the form: <code>{`{Antecedent} -> {Consequent}`}</code> with Support &ge; 3% and Confidence &ge; 20%.
+        </p>
 
-          <div className="table-responsive" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+            Mining Association Rules with Apriori on Active Dataset...
+          </div>
+        ) : rules.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+            No frequent itemsets met the support and confidence threshold in this dataset.
+          </div>
+        ) : (
+          <div className="table-responsive" style={{ maxHeight: '420px', overflowY: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -169,45 +182,28 @@ export default function RecommendationPage() {
                   <th style={{ textAlign: 'right' }}>Support</th>
                   <th style={{ textAlign: 'right' }}>Confidence</th>
                   <th style={{ textAlign: 'right' }}>Lift Ratio</th>
-                  <th style={{ textAlign: 'right' }}>Conviction</th>
+                  <th style={{ textAlign: 'right' }}>Leverage</th>
                 </tr>
               </thead>
               <tbody>
-                {rules.slice(0, 35).map((rule) => (
+                {rules.map((rule) => (
                   <tr key={rule.rule_id}>
-                    <td>#{rule.rule_id}</td>
-                    <td style={{ fontWeight: 600 }}>{rule.antecedent_str}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{rule.consequent_str}</td>
+                    <td><span className="badge badge-blue">#{rule.rule_id}</span></td>
+                    <td style={{ fontWeight: 600 }}>{rule.antecedents_names ? rule.antecedents_names.join(', ') : rule.antecedent_str}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{rule.consequents_names ? rule.consequents_names.join(', ') : rule.consequent_str}</td>
                     <td style={{ textAlign: 'right' }}>{(rule.support * 100).toFixed(2)}%</td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>{(rule.confidence * 100).toFixed(1)}%</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: rule.lift > 1 ? 'var(--success)' : 'inherit' }}>
-                      {rule.lift.toFixed(2)}
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: rule.lift > 1 ? '#16a34a' : 'inherit' }}>
+                      {rule.lift}x
                     </td>
-                    <td style={{ textAlign: 'right' }}>{rule.conviction.toFixed(2)}</td>
+                    <td style={{ textAlign: 'right' }}>{rule.leverage}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      <VivaNote title="DWM Viva Focus: Market Basket Analysis & Apriori Algorithm">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-          <div>
-            <strong>Apriori Principle:</strong> Any subset of a frequent itemset must also be frequent (anti-monotonicity property), which prunes the candidate search space.
-          </div>
-          <div>
-            <strong>Support:</strong> Count(A &and; B) / N &mdash; frequency of joint occurrence in baskets.
-          </div>
-          <div>
-            <strong>Confidence:</strong> Support(A &and; B) / Support(A) &mdash; conditional certainty of purchasing B given A.
-          </div>
-          <div>
-            <strong>Lift:</strong> Confidence(A &rarr; B) / Support(B). A lift &gt; 1 implies positive correlation; lift = 1 implies independence.
-          </div>
-        </div>
-      </VivaNote>
+        )}
+      </div>
     </div>
   );
 }

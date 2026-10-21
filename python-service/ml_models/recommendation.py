@@ -28,8 +28,14 @@ class ProductRecommender:
             lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0]
         ).to_dict()
 
-        target_code = str(stock_code).strip()
-        target_name = desc_lookup.get(target_code, "Unknown Product")
+        target_code = str(stock_code).strip() if stock_code else ""
+        if not target_code or target_code not in desc_lookup:
+            if desc_lookup:
+                top_codes = df['StockCode'].value_counts()
+                target_code = str(top_codes.index[0]) if not top_codes.empty else list(desc_lookup.keys())[0]
+            else:
+                target_code = "ITEM"
+        target_name = desc_lookup.get(target_code, f"Product {target_code}")
 
         # Run Apriori
         mining_result = AprioriMining.run_apriori(

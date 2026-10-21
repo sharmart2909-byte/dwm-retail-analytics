@@ -20,11 +20,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for Spring Boot & React frontend
+# Enable CORS — explicit origins for local dev; Spring Boot sits in front for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:8080",   # Spring Boot (backend-to-backend not needed but harmless)
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,       # FastAPI issues no cookies; wildcard + credentials is a CORS spec violation
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -32,42 +36,111 @@ app.add_middleware(
 # Global preprocessor holding current dataset state
 preprocessor = DataPreprocessor()
 DEFAULT_CSV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "online_retail_sample.csv"))
+ACTIVE_CSV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "active_cleaned_dataset.csv"))
+ACTIVE_SUMMARY_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "active_summary.json"))
 
-# Bootstrap with default dataset on startup if available
 def get_current_df() -> pd.DataFrame:
+    """
+    Returns the active working dataset.
+    Prioritizes:
+    1. Preprocessor in-memory cleaned dataframe
+    2. Persisted active_cleaned_dataset.csv (from recent upload)
+    3. Bundled online_retail_sample.csv as fallback
+    """
     if preprocessor.cleaned_df is not None:
         return preprocessor.cleaned_df
+
+    if os.path.exists(ACTIVE_CSV_PATH):
+        try:
+            df = preprocessor.load_from_path(ACTIVE_CSV_PATH)
+            df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(1).astype(int)
+            df['UnitPrice'] = pd.to_numeric(df['UnitPrice'], errors='coerce').fillna(1.0).astype(float)
+            df['TotalAmount'] = (df['Quantity'] * df['UnitPrice']).round(2)
+            df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], errors='coerce').fillna(pd.Timestamp.now())
+            preprocessor.cleaned_df = df
+            if os.path.exists(ACTIVE_SUMMARY_PATH):
+                import json
+                with open(ACTIVE_SUMMARY_PATH, 'r') as sf:
+                    preprocessor.last_summary = json.load(sf)
+            return df
+        except Exception as e:
+            print(f"Warning: Failed to load active_cleaned_dataset.csv: {e}")
+
     if os.path.exists(DEFAULT_CSV_PATH):
         df = preprocessor.load_from_path(DEFAULT_CSV_PATH)
         cleaned_df, _ = preprocessor.preprocess(df)
         return cleaned_df
+
     raise HTTPException(status_code=400, detail="No dataset loaded. Please upload a dataset first.")
 
 @app.get("/health")
 def health_check():
+    has_active = os.path.exists(ACTIVE_CSV_PATH) or preprocessor.cleaned_df is not None
     return {
         "status": "healthy",
         "service": "Python FastAPI Data Mining Service",
-        "has_data": preprocessor.cleaned_df is not None or os.path.exists(DEFAULT_CSV_PATH),
-        "data_rows": len(preprocessor.cleaned_df) if preprocessor.cleaned_df is not None else 0
+        "has_data": has_active or os.path.exists(DEFAULT_CSV_PATH),
+        "data_rows": len(preprocessor.cleaned_df) if preprocessor.cleaned_df is not None else 0,
+        "active_dataset": "custom_upload" if os.path.exists(ACTIVE_CSV_PATH) else "default_sample"
     }
 
-@app.post("/api/data/preprocess")
-async def preprocess_dataset(file: Optional[UploadFile] = File(None)):
+@app.post("/api/data/inspect")
+async def inspect_dataset(file: Optional[UploadFile] = File(None)):
     """
-    Accepts CSV upload or loads default dataset,
-    runs full preprocessing pipeline, and returns audit metrics.
+    Inspects CSV or Excel (.xlsx) file headers, detects column mappings,
+    and returns raw preview without destructive loading.
     """
     try:
         if file is not None and file.filename != '':
             contents = await file.read()
-            df = preprocessor.load_from_bytes(contents)
+            df = preprocessor.load_from_bytes(contents, filename=file.filename)
         else:
             if not os.path.exists(DEFAULT_CSV_PATH):
                 raise HTTPException(status_code=404, detail="Default sample CSV not found.")
             df = preprocessor.load_from_path(DEFAULT_CSV_PATH)
 
-        cleaned_df, summary = preprocessor.preprocess(df)
+        inspection = preprocessor.detect_columns(df)
+        raw_preview = df.head(10).fillna('').to_dict(orient='records')
+
+        return {
+            "success": True,
+            "filename": file.filename if file else "online_retail_sample.csv",
+            "inspection": inspection,
+            "sample_rows": raw_preview
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inspection failed: {str(e)}")
+
+@app.post("/api/data/preprocess")
+async def preprocess_dataset(
+    file: Optional[UploadFile] = File(None),
+    mapping: Optional[str] = Form(None)
+):
+    """
+    Accepts CSV or Excel (.xlsx) upload or loads default dataset.
+    Applies custom or auto-detected column mapping, executes full cleaning pipeline,
+    and returns audit metrics.
+    """
+    import json
+    try:
+        column_mapping = None
+        if mapping:
+            try:
+                column_mapping = json.loads(mapping)
+            except Exception:
+                column_mapping = None
+
+        if file is not None and file.filename != '':
+            contents = await file.read()
+            df = preprocessor.load_from_bytes(contents, filename=file.filename)
+        else:
+            if not os.path.exists(DEFAULT_CSV_PATH):
+                raise HTTPException(status_code=404, detail="Default sample CSV not found.")
+            df = preprocessor.load_from_path(DEFAULT_CSV_PATH)
+
+        cleaned_df, summary = preprocessor.preprocess(df, mapping=column_mapping)
 
         preview_records = cleaned_df.head(50).fillna('').to_dict(orient='records')
         # Serialize timestamps
@@ -81,6 +154,8 @@ async def preprocess_dataset(file: Optional[UploadFile] = File(None)):
             "summary": summary,
             "preview": preview_records
         }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Preprocessing failed: {str(e)}")
 

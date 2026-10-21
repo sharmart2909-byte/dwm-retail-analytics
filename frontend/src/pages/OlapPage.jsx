@@ -1,21 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { olapApi } from '../api';
 import VivaNote from '../components/VivaNote';
-import { Layers, ArrowUpRight, ArrowDownRight, Scissors, Grid3X3, Clock, Terminal } from 'lucide-react';
+import { Layers, ArrowUpRight, ArrowDownRight, Scissors, Grid3X3, Clock, Terminal, RefreshCw } from 'lucide-react';
 
 export default function OlapPage() {
   const [operation, setOperation] = useState('rollup');
   const [rollupDim, setRollupDim] = useState('time');
-  const [drillYear, setDrillYear] = useState(2011);
-  const [drillMonth, setDrillMonth] = useState(12);
+  const [drillYear, setDrillYear] = useState('');
+  const [drillMonth, setDrillMonth] = useState('');
   const [sliceDim, setSliceDim] = useState('country');
-  const [sliceVal, setSliceVal] = useState('United Kingdom');
+  const [sliceVal, setSliceVal] = useState('');
   const [diceQuarter, setDiceQuarter] = useState(4);
-  const [diceYear, setDiceYear] = useState(2011);
+  const [diceYear, setDiceYear] = useState('');
 
+  const [options, setOptions] = useState({ years: [], months: [], quarters: [], countries: [] });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Load available dimension members dynamically from active MySQL warehouse
+  const loadOptions = async () => {
+    try {
+      const res = await olapApi.getOptions();
+      const opts = res.data || { years: [], months: [], quarters: [], countries: [] };
+      setOptions(opts);
+
+      if (opts.years && opts.years.length > 0) {
+        setDrillYear(opts.years[0]);
+        setDiceYear(opts.years[0]);
+      }
+      if (opts.months && opts.months.length > 0) {
+        setDrillMonth(opts.months[opts.months.length - 1]);
+      }
+      if (opts.countries && opts.countries.length > 0) {
+        setSliceVal(opts.countries[0]);
+      }
+    } catch (err) {
+      console.warn('Could not load OLAP options:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadOptions();
+  }, []);
 
   const executeOlap = async () => {
     setLoading(true);
@@ -25,11 +52,11 @@ export default function OlapPage() {
       if (operation === 'rollup') {
         res = await olapApi.getRollup(rollupDim);
       } else if (operation === 'drilldown') {
-        res = await olapApi.getDrilldown(drillYear, drillMonth);
+        res = await olapApi.getDrilldown(drillYear || null, drillMonth || null);
       } else if (operation === 'slice') {
-        res = await olapApi.getSlice(sliceDim, sliceVal);
+        res = await olapApi.getSlice(sliceDim, sliceVal || '');
       } else if (operation === 'dice') {
-        res = await olapApi.getDice(diceQuarter, diceYear);
+        res = await olapApi.getDice(diceQuarter || 4, diceYear || null);
       }
       setData(res.data);
     } catch (err) {
@@ -49,11 +76,17 @@ export default function OlapPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2 className="page-title">OLAP Multidimensional Analysis</h2>
-        <p className="page-desc">
-          Live execution of Roll-up, Drill-down, Slice, and Dice queries on MySQL Star Schema data cubes.
-        </p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h2 className="page-title">OLAP Multidimensional Analysis</h2>
+          <p className="page-desc">
+            Live execution of Roll-up, Drill-down, Slice, and Dice queries on MySQL Star Schema data cubes.
+          </p>
+        </div>
+        <button className="btn btn-outline" onClick={() => { loadOptions(); executeOlap(); }} disabled={loading}>
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+          Refresh Cube
+        </button>
       </div>
 
       {/* Operation Selection Bar */}
@@ -106,16 +139,19 @@ export default function OlapPage() {
             <>
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Drill down Target Year:</label>
               <select className="select-field" value={drillYear} onChange={(e) => setDrillYear(Number(e.target.value))}>
-                <option value="2011">2011</option>
-                <option value="2010">2010</option>
+                {options.years && options.years.length > 0 ? (
+                  options.years.map(y => <option key={y} value={y}>{y}</option>)
+                ) : (
+                  <option value="">Latest Year</option>
+                )}
               </select>
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Month:</label>
               <select className="select-field" value={drillMonth} onChange={(e) => setDrillMonth(Number(e.target.value))}>
-                <option value="12">December (Month 12)</option>
-                <option value="11">November (Month 11)</option>
-                <option value="10">October (Month 10)</option>
-                <option value="9">September (Month 9)</option>
-                <option value="8">August (Month 8)</option>
+                {options.months && options.months.length > 0 ? (
+                  options.months.map(m => <option key={m} value={m}>Month {m}</option>)
+                ) : (
+                  [1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>Month {m}</option>)
+                )}
               </select>
             </>
           )}
@@ -124,8 +160,13 @@ export default function OlapPage() {
             <>
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Slice Dimension:</label>
               <select className="select-field" value={sliceDim} onChange={(e) => {
-                setSliceDim(e.target.value);
-                setSliceVal(e.target.value === 'country' ? 'United Kingdom' : '2011');
+                const nextDim = e.target.value;
+                setSliceDim(nextDim);
+                if (nextDim === 'country') {
+                  setSliceVal(options.countries && options.countries.length > 0 ? options.countries[0] : '');
+                } else {
+                  setSliceVal(options.years && options.years.length > 0 ? String(options.years[0]) : '');
+                }
               }}>
                 <option value="country">Country (Geography)</option>
                 <option value="year">Year (Time)</option>
@@ -133,15 +174,19 @@ export default function OlapPage() {
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Value:</label>
               {sliceDim === 'country' ? (
                 <select className="select-field" value={sliceVal} onChange={(e) => setSliceVal(e.target.value)}>
-                  <option value="United Kingdom">United Kingdom</option>
-                  <option value="France">France</option>
-                  <option value="Germany">Germany</option>
-                  <option value="Australia">Australia</option>
+                  {options.countries && options.countries.length > 0 ? (
+                    options.countries.map(c => <option key={c} value={c}>{c}</option>)
+                  ) : (
+                    <option value="Global">Global</option>
+                  )}
                 </select>
               ) : (
                 <select className="select-field" value={sliceVal} onChange={(e) => setSliceVal(e.target.value)}>
-                  <option value="2011">2011</option>
-                  <option value="2010">2010</option>
+                  {options.years && options.years.length > 0 ? (
+                    options.years.map(y => <option key={y} value={y}>{y}</option>)
+                  ) : (
+                    <option value="">All Years</option>
+                  )}
                 </select>
               )}
             </>
@@ -150,7 +195,9 @@ export default function OlapPage() {
           {operation === 'dice' && (
             <>
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Multi-dimensional Predicates:</label>
-              <span className="badge badge-blue">Country IN ('UK', 'France', 'Germany', 'Australia')</span>
+              <span className="badge badge-blue">
+                Top Active Countries ({options.countries && options.countries.length > 0 ? options.countries.slice(0, 4).join(', ') : 'All Countries'})
+              </span>
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Quarter:</label>
               <select className="select-field" value={diceQuarter} onChange={(e) => setDiceQuarter(Number(e.target.value))}>
                 <option value="4">Q4 (Oct - Dec)</option>
@@ -160,8 +207,11 @@ export default function OlapPage() {
               </select>
               <label style={{ fontSize: '13.5px', fontWeight: 600 }}>Year:</label>
               <select className="select-field" value={diceYear} onChange={(e) => setDiceYear(Number(e.target.value))}>
-                <option value="2011">2011</option>
-                <option value="2010">2010</option>
+                {options.years && options.years.length > 0 ? (
+                  options.years.map(y => <option key={y} value={y}>{y}</option>)
+                ) : (
+                  <option value="">Latest Year</option>
+                )}
               </select>
             </>
           )}
@@ -178,76 +228,84 @@ export default function OlapPage() {
         </div>
       )}
 
-      {/* Query Title & SQL Execution Card */}
+      {/* Query Metadata Strip */}
       {data && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 className="card-title" style={{ margin: 0 }}>{data.title}</h3>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Clock size={13} />
-              Query Time: <strong>{data.execution_time_ms} ms</strong> | Rows: <strong>{data.result_count}</strong>
+        <div className="card" style={{ backgroundColor: '#f8fafc', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)' }}>
+              {data.title}
             </span>
-          </div>
-
-          <div style={{ marginTop: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
-              <Terminal size={14} />
-              <span>Actual MySQL Query Executed Against Star Schema:</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span className="badge badge-blue">
+                <Clock size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                {data.execution_time_ms} ms
+              </span>
+              <span className="badge badge-green">
+                {data.result_count} records returned
+              </span>
             </div>
-            <pre className="sql-snippet">{data.sql_query}</pre>
           </div>
-
-          {/* Result Data Table */}
-          <div className="table-responsive" style={{ maxHeight: '420px', overflowY: 'auto', marginTop: '14px' }}>
-            {rows.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                No records match this OLAP sub-cube specification.
-              </div>
-            ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {columns.map((col) => (
-                      <th key={col}>{col.toUpperCase()}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, idx) => (
-                    <tr key={idx}>
-                      {columns.map((col) => {
-                        const val = row[col];
-                        return (
-                          <td key={col} style={{ fontWeight: String(val).includes('ALL') ? 700 : 400 }}>
-                            {val !== null && val !== undefined ? String(val) : 'NULL'}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <div style={{ backgroundColor: '#0f172a', padding: '10px 14px', borderRadius: '6px', overflowX: 'auto' }}>
+            <div style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '4px' }}>
+              <Terminal size={12} style={{ display: 'inline', marginRight: '6px' }} />
+              Live SQL executed against MySQL Star Schema (retail_dw):
+            </div>
+            <code style={{ color: '#38bdf8', fontSize: '12px', fontFamily: 'monospace' }}>
+              {data.sql_query}
+            </code>
           </div>
         </div>
       )}
 
-      <VivaNote title="DWM Viva Focus: Explaining the 4 Core OLAP Operations">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
-          <div>
-            <strong>1. Roll-up (Aggregation):</strong> Climbs up concept hierarchies (e.g. Day &rarr; Month &rarr; Year) or drops dimensions to generalize data using <code>GROUP BY ... WITH ROLLUP</code>.
+      {/* OLAP Cube Results Grid */}
+      <div className="card">
+        <h3 className="card-title">Multidimensional Cube Result Set</h3>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+            Querying MySQL Star Schema Multidimensional Data Cube...
           </div>
-          <div>
-            <strong>2. Drill-down (De-aggregation):</strong> Traverses down concept hierarchies to reveal fine-grained details, such as daily product sales.
+        ) : rows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+            No records matched the selected dimension coordinates. Try selecting another year or country from the dataset.
           </div>
-          <div>
-            <strong>3. Slice:</strong> Performs a selection on one dimension of the cube, yielding a sub-cube where one dimension has a single fixed value.
+        ) : (
+          <div className="table-responsive" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {columns.map((col) => (
+                    <th key={col} style={{ textTransform: 'capitalize' }}>
+                      {col.replace(/_/g, ' ')}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => (
+                  <tr key={idx}>
+                    {columns.map((col) => (
+                      <td key={col}>
+                        {typeof row[col] === 'number'
+                          ? row[col].toLocaleString()
+                          : (row[col] === null ? '<TOTAL>' : String(row[col]))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div>
-            <strong>4. Dice:</strong> Performs a selection on two or more dimensions simultaneously, isolating an intersection sub-cube.
-          </div>
-        </div>
-      </VivaNote>
+        )}
+      </div>
+
+      {data?.viva_explanation && (
+        <VivaNote title={`DWM Academic Viva Focus: ${operation.toUpperCase()} Operator`}>
+          <p><strong>Concept & Definition:</strong> {data.viva_explanation}</p>
+          <p style={{ marginTop: '6px' }}>
+            <strong>OLAP vs. OLTP Distinction:</strong> OLAP queries execute multidimensional aggregations across dimension tables (star schema) rather than normalized entity tables, enabling high-performance decision support.
+          </p>
+        </VivaNote>
+      )}
     </div>
   );
 }

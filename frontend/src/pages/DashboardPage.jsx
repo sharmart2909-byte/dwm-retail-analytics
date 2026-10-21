@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dashboardApi } from '../api';
 import StatCard from '../components/StatCard';
-import VivaNote from '../components/VivaNote';
 import { Server, Database, Activity, RefreshCw } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -172,15 +171,6 @@ export default function DashboardPage() {
         </div>
 
       </div>
-
-      <VivaNote title="DWM Viva Focus: OLTP vs. OLAP Architecture">
-        <p>
-          <strong>OLTP (Online Transaction Processing):</strong> Designed for day-to-day operations with highly normalized 3NF schemas to eliminate write anomalies and ensure ACID transactions.
-        </p>
-        <p style={{ marginTop: '6px' }}>
-          <strong>OLAP (Online Analytical Processing):</strong> Designed for decision support and historical analysis with denormalized Dimensional Modeling (Star Schema). The central <code>fact_sales</code> table stores numeric measures and foreign keys pointing to dimension tables (<code>dim_customer</code>, <code>dim_product</code>, <code>dim_date</code>).
-        </p>
-      </VivaNote>
     </div>
   );
 }

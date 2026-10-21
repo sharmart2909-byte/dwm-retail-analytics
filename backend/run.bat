@@ -1,3 +1,12 @@
 @echo off
+echo =======================================================================
 echo Starting Spring Boot Backend on port 8080...
-java -Dorg.jboss.logging.provider=slf4j --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.invoke=ALL-UNNAMED -cp "target\classes;lib\*" com.retail.dw.RetailDwApplication
+echo =======================================================================
+
+if exist "%~dp0target\online-retail-dw-1.0.0.jar" (
+    echo Launching packaged JAR: target\online-retail-dw-1.0.0.jar
+    java -jar "%~dp0target\online-retail-dw-1.0.0.jar"
+) else (
+    echo Packaged JAR not found. Launching via Maven spring-boot:run...
+    call mvn spring-boot:run
+)

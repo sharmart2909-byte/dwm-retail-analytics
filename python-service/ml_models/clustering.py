@@ -125,14 +125,14 @@ class CustomerSegmentation:
 
         # Customer scatter points for 2D/3D visualization
         scatter_points = []
-        for idx, row in rfm_km.iterrows():
+        for pos, (idx, row) in enumerate(rfm_km.iterrows()):
             scatter_points.append({
                 "customer_id": str(row['CustomerID']),
                 "recency": int(row['Recency']),
                 "frequency": int(row['Frequency']),
                 "monetary": round(float(row['Monetary']), 2),
                 "kmeans_cluster": int(row['Cluster']),
-                "agglomerative_cluster": int(agg_labels[idx])
+                "agglomerative_cluster": int(agg_labels[pos])   # pos = sequential array index
             })
 
         # =================================================================
