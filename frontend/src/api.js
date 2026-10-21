@@ -42,6 +42,14 @@ export const customerApi = {
     api.get(`/customer/recommendations${stockCode ? `?stock_code=${encodeURIComponent(stockCode)}` : ''}`),
 };
 
+export const cartApi = {
+  getCart: () => api.get('/customer/cart'),
+  addItem: (productId, quantity = 1) => api.post('/customer/cart/items', { productId, quantity }),
+  updateQuantity: (itemId, quantity) => api.put(`/customer/cart/items/${itemId}`, { quantity }),
+  removeItem: (itemId) => api.delete(`/customer/cart/items/${itemId}`),
+  clearCart: () => api.delete('/customer/cart'),
+};
+
 export const dashboardApi = {
   getStats: () => api.get('/dashboard/stats'),
 };
@@ -67,11 +75,25 @@ export const warehouseApi = {
 };
 
 export const olapApi = {
+  getOptions: () => api.get('/olap/options'),
   getRollup: (dimension = 'time') => api.get(`/olap/rollup?dimension=${dimension}`),
-  getDrilldown: (year = 2011, month = 12) => api.get(`/olap/drilldown?year=${year}&month=${month}`),
-  getSlice: (dimension = 'country', value = 'United Kingdom') =>
-    api.get(`/olap/slice?dimension=${dimension}&value=${encodeURIComponent(value)}`),
-  getDice: (quarter = 4, year = 2011) => api.get(`/olap/dice?quarter=${quarter}&year=${year}`),
+  getDrilldown: (year, month) => {
+    let url = '/olap/drilldown';
+    const params = [];
+    if (year) params.push(`year=${year}`);
+    if (month) params.push(`month=${month}`);
+    return api.get(params.length > 0 ? `${url}?${params.join('&')}` : url);
+  },
+  getSlice: (dimension = 'country', value = '') =>
+    api.get(`/olap/slice?dimension=${dimension}${value ? `&value=${encodeURIComponent(value)}` : ''}`),
+  getDice: (quarter, year, countries = '') => {
+    let url = '/olap/dice';
+    const params = [];
+    if (quarter) params.push(`quarter=${quarter}`);
+    if (year) params.push(`year=${year}`);
+    if (countries) params.push(`countries=${encodeURIComponent(countries)}`);
+    return api.get(params.length > 0 ? `${url}?${params.join('&')}` : url);
+  },
 };
 
 export const analyticsApi = {

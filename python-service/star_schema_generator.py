@@ -15,22 +15,31 @@ class StarSchemaGenerator:
     def generate_star_schema(cleaned_df: pd.DataFrame) -> Dict[str, Any]:
         df = cleaned_df.copy()
 
+        # Clean string keys
+        df['CustomerID'] = df['CustomerID'].astype(str).str.strip().str[:50]
+        df['Country'] = df['Country'].astype(str).str.strip().str[:100]
+        df['StockCode'] = df['StockCode'].astype(str).str.strip().str[:50]
+        df['Description'] = df['Description'].astype(str).str.strip().str[:255]
+
         # 1. dim_customer: unique customer_id and primary country
-        # In case a customer ordered from multiple countries, take mode / first
-        cust_group = df.groupby('CustomerID')['Country'].agg(lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0]).reset_index()
+        cust_group = df.groupby('CustomerID')['Country'].agg(
+            lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0]
+        ).reset_index()
         dim_customer = [
-            {"customer_id": str(row['CustomerID']), "country": str(row['Country'])}
+            {"customer_id": str(row['CustomerID'])[:50], "country": str(row['Country'])[:100]}
             for _, row in cust_group.iterrows()
         ]
 
         # 2. dim_product: unique stock_code and latest description
-        prod_group = df.groupby('StockCode')['Description'].agg(lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0]).reset_index()
+        prod_group = df.groupby('StockCode')['Description'].agg(
+            lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0]
+        ).reset_index()
         stock_to_id = {}
         dim_product = []
         for idx, row in prod_group.iterrows():
             prod_id = idx + 1
-            stock_code = str(row['StockCode']).strip()
-            desc = str(row['Description']).strip()
+            stock_code = str(row['StockCode']).strip()[:50]
+            desc = str(row['Description']).strip()[:255]
             stock_to_id[stock_code] = prod_id
             dim_product.append({
                 "product_id": prod_id,
@@ -39,12 +48,12 @@ class StarSchemaGenerator:
             })
 
         # 3. dim_date: unique dates extracted from InvoiceDate
-        df['Date_Obj'] = pd.to_datetime(df['InvoiceDate'])
+        df['Date_Obj'] = pd.to_datetime(df['InvoiceDate'], errors='coerce').fillna(pd.Timestamp.now())
         df['Date_Key'] = df['Date_Obj'].dt.strftime('%Y%m%d').astype(int)
-        df['Day'] = df['Date_Obj'].dt.day
-        df['Month'] = df['Date_Obj'].dt.month
-        df['Quarter'] = df['Date_Obj'].dt.quarter
-        df['Year'] = df['Date_Obj'].dt.year
+        df['Day'] = df['Date_Obj'].dt.day.astype(int)
+        df['Month'] = df['Date_Obj'].dt.month.astype(int)
+        df['Quarter'] = df['Date_Obj'].dt.quarter.astype(int)
+        df['Year'] = df['Date_Obj'].dt.year.astype(int)
 
         unique_dates = df[['Date_Key', 'Day', 'Month', 'Quarter', 'Year']].drop_duplicates()
         dim_date = [
@@ -59,7 +68,7 @@ class StarSchemaGenerator:
         ]
 
         # 4. fact_sales: sales transactions joined with generated keys
-        df['Product_ID'] = df['StockCode'].astype(str).str.strip().map(stock_to_id)
+        df['Product_ID'] = df['StockCode'].map(stock_to_id)
         df['Product_ID'] = df['Product_ID'].fillna(1).astype(int)
 
         fact_sales = []
@@ -68,9 +77,9 @@ class StarSchemaGenerator:
             price = round(float(row['UnitPrice']), 2)
             total = round(float(row['TotalAmount']), 2)
             fact_sales.append({
-                "customer_id": str(row['CustomerID']),
-                "stock_code": str(row['StockCode']).strip(),   # used by Java to resolve DB product_id
-                "product_id": int(row['Product_ID']),           # kept for reference; Java now ignores this
+                "customer_id": str(row['CustomerID'])[:50],
+                "stock_code": str(row['StockCode'])[:50],
+                "product_id": int(row['Product_ID']),
                 "date_id": int(row['Date_Key']),
                 "quantity": qty,
                 "unit_price": price,

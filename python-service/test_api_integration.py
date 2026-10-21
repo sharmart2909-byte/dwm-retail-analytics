@@ -60,14 +60,14 @@ class TestFastAPIIntegration(unittest.TestCase):
         # Reset global preprocessor back to default representative dataset for subsequent analytics tests
         self.client.post("/api/data/preprocess")
 
-    def test_preprocess_missing_required_columns_returns_400(self):
+    def test_preprocess_any_column_names_succeeds(self):
         csv_content = b"col1,col2,col3\nval1,val2,val3\n"
-        files = {"file": ("invalid.csv", io.BytesIO(csv_content), "text/csv")}
+        files = {"file": ("any_columns.csv", io.BytesIO(csv_content), "text/csv")}
         response = self.client.post("/api/data/preprocess", files=files)
-        # Must return 400 Bad Request, NOT 500!
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Missing required column", response.json()["detail"])
-        # Reset
+        # Any column names are accepted and synthesized
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        # Reset to default representative dataset for subsequent analytics tests
         self.client.post("/api/data/preprocess")
 
     def test_star_schema_generation(self):

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../api';
 import StatCard from '../components/StatCard';
-import VivaNote from '../components/VivaNote';
 import { Users, RefreshCw, Layers } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -232,15 +231,6 @@ export default function SegmentationPage() {
           </div>
         </>
       ) : null}
-
-      <VivaNote title="DWM Viva Focus: RFM Metrics & Clustering Comparison">
-        <p>
-          <strong>RFM Model:</strong> Recency (how recently did the customer buy?), Frequency (how often do they buy?), and Monetary value (how much money do they spend?). StandardScaler ensures features with larger raw scales (Monetary) do not dominate Euclidean distance calculations.
-        </p>
-        <p style={{ marginTop: '6px' }}>
-          <strong>K-Means vs. Agglomerative:</strong> K-Means is a centroid-based partitioning technique with \(O(n \cdot k \cdot t)\) time complexity. Agglomerative is a hierarchical bottom-up method with \(O(n^2 \log n)\) complexity that constructs a dendrogram without requiring random initial seeds.
-        </p>
-      </VivaNote>
     </div>
   );
 }

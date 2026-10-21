@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { customerApi } from '../api';
-import { ShoppingBag, Search, Sparkles, Clock, Package, ArrowRight, User, LogOut, X, TrendingUp, DollarSign, AlertCircle, ShoppingCart } from 'lucide-react';
+import { customerApi, cartApi } from '../api';
+import { ShoppingBag, Search, Sparkles, Clock, Package, ArrowRight, User, LogOut, X, TrendingUp, DollarSign, AlertCircle, ShoppingCart, Trash2, Plus, Minus, CheckCircle, ArrowLeft } from 'lucide-react';
 
 export default function CustomerPortalPage() {
   const { user, logout } = useAuth();
 
-  // Tab state: 'browse' | 'recommendations' | 'orders'
+  // Tab state: 'browse' | 'recommendations' | 'orders' | 'cart'
   const [activeTab, setActiveTab] = useState('browse');
 
   // Catalog state
@@ -34,10 +34,217 @@ export default function CustomerPortalPage() {
   // Toast / feedback message
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Cart state (Tab 4)
+  const [cart, setCart] = useState({
+    items: [],
+    itemCount: 0,
+    totalQuantity: 0,
+    totalAmount: 0.00
+  });
+  const [cartLoading, setCartLoading] = useState(false);
+  const [cartUpdatingId, setCartUpdatingId] = useState(null);
+  const [orderSuccessModal, setOrderSuccessModal] = useState(false);
+
+  const getStorageKey = () => `retail_cart_${user?.userId || user?.username || 'user'}`;
+
+  const saveAndSetCart = (newCart) => {
+    setCart(newCart);
+    try {
+      localStorage.setItem(getStorageKey(), JSON.stringify(newCart));
+    } catch (e) {}
+  };
+
+  const fetchCart = async () => {
+    setCartLoading(true);
+    try {
+      const saved = localStorage.getItem(getStorageKey());
+      if (saved) {
+        setCart(JSON.parse(saved));
+      }
+    } catch (e) {}
+
+    try {
+      const res = await cartApi.getCart();
+      if (res.data) {
+        const serverCart = {
+          items: res.data.items || [],
+          itemCount: res.data.itemCount || (res.data.items ? res.data.items.length : 0),
+          totalQuantity: res.data.totalQuantity || 0,
+          totalAmount: Number(res.data.totalAmount || 0)
+        };
+        saveAndSetCart(serverCart);
+      }
+    } catch (err) {
+      console.warn('Backend cart endpoint offline or unauthenticated, running with local cart session:', err);
+    } finally {
+      setCartLoading(false);
+    }
+  };
+
+  const handleAddToCart = async (product, quantity = 1) => {
+    const pId = product.product_id || product.productId;
+    const price = Number(product.unit_price || product.unitPrice || 2.99);
+    const stockCode = product.stock_code || product.stockCode || 'N/A';
+    const description = product.description || 'Product Item';
+
+    try {
+      if (pId) {
+        const res = await cartApi.addItem(pId, quantity);
+        if (res.data && res.data.items) {
+          const updated = {
+            items: res.data.items,
+            itemCount: res.data.itemCount || res.data.items.length,
+            totalQuantity: res.data.totalQuantity || res.data.items.reduce((s, i) => s + i.quantity, 0),
+            totalAmount: Number(res.data.totalAmount || 0)
+          };
+          saveAndSetCart(updated);
+          showToast(`Added "${description}" to basket!`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('API addItem notice, maintaining local session cart:', err);
+    }
+
+    // Local cart fallback
+    setCart((prev) => {
+      const items = [...prev.items];
+      const idx = items.findIndex((it) => (pId && it.productId === pId) || (it.stockCode === stockCode));
+      if (idx >= 0) {
+        const existing = items[idx];
+        const newQty = existing.quantity + quantity;
+        items[idx] = {
+          ...existing,
+          quantity: newQty,
+          subtotal: Number((existing.unitPrice * newQty).toFixed(2))
+        };
+      } else {
+        items.push({
+          cartItemId: Date.now(),
+          productId: pId || Date.now(),
+          stockCode,
+          description,
+          quantity,
+          unitPrice: price,
+          subtotal: Number((price * quantity).toFixed(2))
+        });
+      }
+      const totalQty = items.reduce((sum, it) => sum + it.quantity, 0);
+      const totalAmt = Number(items.reduce((sum, it) => sum + (it.unitPrice * it.quantity), 0).toFixed(2));
+      const updated = {
+        items,
+        itemCount: items.length,
+        totalQuantity: totalQty,
+        totalAmount: totalAmt
+      };
+      saveAndSetCart(updated);
+      return updated;
+    });
+
+    showToast(`Added "${description}" to basket!`);
+  };
+
+  const handleUpdateQuantity = async (cartItemId, newQty) => {
+    if (newQty <= 0) {
+      handleRemoveItem(cartItemId);
+      return;
+    }
+    setCartUpdatingId(cartItemId);
+    try {
+      const res = await cartApi.updateQuantity(cartItemId, newQty);
+      if (res.data && res.data.items) {
+        const updated = {
+          items: res.data.items,
+          itemCount: res.data.itemCount || res.data.items.length,
+          totalQuantity: res.data.totalQuantity || res.data.items.reduce((s, i) => s + i.quantity, 0),
+          totalAmount: Number(res.data.totalAmount || 0)
+        };
+        saveAndSetCart(updated);
+        setCartUpdatingId(null);
+        return;
+      }
+    } catch (err) {
+      console.warn('API updateQuantity notice, fallback to local:', err);
+    }
+
+    setCart((prev) => {
+      const items = prev.items.map((it) => {
+        if (it.cartItemId === cartItemId) {
+          return {
+            ...it,
+            quantity: newQty,
+            subtotal: Number((it.unitPrice * newQty).toFixed(2))
+          };
+        }
+        return it;
+      });
+      const totalQty = items.reduce((sum, it) => sum + it.quantity, 0);
+      const totalAmt = Number(items.reduce((sum, it) => sum + (it.unitPrice * it.quantity), 0).toFixed(2));
+      const updated = {
+        items,
+        itemCount: items.length,
+        totalQuantity: totalQty,
+        totalAmount: totalAmt
+      };
+      saveAndSetCart(updated);
+      return updated;
+    });
+    setCartUpdatingId(null);
+  };
+
+  const handleRemoveItem = async (cartItemId) => {
+    setCartUpdatingId(cartItemId);
+    try {
+      const res = await cartApi.removeItem(cartItemId);
+      if (res.data && res.data.items) {
+        const updated = {
+          items: res.data.items,
+          itemCount: res.data.itemCount || res.data.items.length,
+          totalQuantity: res.data.totalQuantity || res.data.items.reduce((s, i) => s + i.quantity, 0),
+          totalAmount: Number(res.data.totalAmount || 0)
+        };
+        saveAndSetCart(updated);
+        showToast('Item removed from basket');
+        setCartUpdatingId(null);
+        return;
+      }
+    } catch (err) {
+      console.warn('API removeItem notice, fallback to local:', err);
+    }
+
+    setCart((prev) => {
+      const items = prev.items.filter((it) => it.cartItemId !== cartItemId);
+      const totalQty = items.reduce((sum, it) => sum + it.quantity, 0);
+      const totalAmt = Number(items.reduce((sum, it) => sum + (it.unitPrice * it.quantity), 0).toFixed(2));
+      const updated = {
+        items,
+        itemCount: items.length,
+        totalQuantity: totalQty,
+        totalAmount: totalAmt
+      };
+      saveAndSetCart(updated);
+      return updated;
+    });
+    showToast('Item removed from basket');
+    setCartUpdatingId(null);
+  };
+
+  const handleClearCart = async () => {
+    try {
+      await cartApi.clearCart();
+    } catch (err) {
+      console.warn('API clearCart notice:', err);
+    }
+    const empty = { items: [], itemCount: 0, totalQuantity: 0, totalAmount: 0.00 };
+    saveAndSetCart(empty);
+    showToast('Basket cleared');
+  };
+
   useEffect(() => {
     fetchCatalog();
     fetchPersonalizedRecommendations();
     fetchOrders();
+    fetchCart();
   }, []);
 
   const showToast = (msg) => {
@@ -197,8 +404,41 @@ export default function CustomerPortalPage() {
           </div>
         </div>
 
-        {/* Customer Profile & Logout */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {/* Customer Profile, Cart & Logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {/* Header Cart Quick Access Button */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('cart')}
+            className={`btn ${activeTab === 'cart' ? 'btn-primary' : 'btn-outline'}`}
+            style={{
+              padding: '7px 14px',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontWeight: 600,
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+            title="View My Shopping Cart"
+          >
+            <ShoppingCart size={16} />
+            <span>My Cart</span>
+            {cart.totalQuantity > 0 && (
+              <span style={{
+                backgroundColor: activeTab === 'cart' ? '#ffffff' : '#2563eb',
+                color: activeTab === 'cart' ? '#2563eb' : '#ffffff',
+                borderRadius: '999px',
+                padding: '1px 7px',
+                fontSize: '11px',
+                fontWeight: 700
+              }}>
+                {cart.totalQuantity}
+              </span>
+            )}
+          </button>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#334155' }}>
             <div style={{
               width: '32px',
@@ -233,7 +473,7 @@ export default function CustomerPortalPage() {
       {/* Main Container */}
       <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '24px' }}>
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', flexWrap: 'wrap' }}>
           <button
             onClick={() => setActiveTab('browse')}
             className={`btn ${activeTab === 'browse' ? 'btn-primary' : 'btn-outline'}`}
@@ -265,6 +505,17 @@ export default function CustomerPortalPage() {
             My Purchase History
             {orders.length > 0 && (
               <span className="badge badge-blue" style={{ marginLeft: '4px' }}>{orders.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('cart')}
+            className={`btn ${activeTab === 'cart' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}
+          >
+            <ShoppingCart size={16} />
+            My Cart
+            {cart.totalQuantity > 0 && (
+              <span className="badge badge-blue" style={{ marginLeft: '4px' }}>{cart.totalQuantity}</span>
             )}
           </button>
         </div>
@@ -348,6 +599,9 @@ export default function CustomerPortalPage() {
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <span className="badge badge-blue">SKU: {item.stock_code}</span>
+                        <span style={{ fontWeight: 700, color: '#2563eb', fontSize: '13px' }}>
+                          ${Number(item.unit_price || 2.99).toFixed(2)}
+                        </span>
                       </div>
                       <h4 style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', margin: '8px 0 12px 0', lineHeight: '1.4' }}>
                         {item.description}
@@ -375,7 +629,7 @@ export default function CustomerPortalPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => showToast(`Added "${item.description}" to basket!`)}
+                        onClick={() => handleAddToCart(item)}
                         className="btn btn-primary"
                         style={{ fontSize: '12px', padding: '6px 12px' }}
                       >
@@ -452,11 +706,16 @@ export default function CustomerPortalPage() {
                       </div>
 
                       <div style={{ paddingTop: '10px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
-                          Confidence: {Math.round((rec.confidence || 0.8) * 100)}%
-                        </span>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
+                            Confidence: {Math.round((rec.confidence || 0.8) * 100)}%
+                          </div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#2563eb' }}>
+                            ${Number(rec.unit_price || 2.99).toFixed(2)}
+                          </div>
+                        </div>
                         <button
-                          onClick={() => showToast(`Added "${rec.description}" to basket!`)}
+                          onClick={() => handleAddToCart(rec)}
                           className="btn btn-primary"
                           style={{ fontSize: '12px', padding: '6px 12px' }}
                         >
@@ -508,14 +767,19 @@ export default function CustomerPortalPage() {
                           <Sparkles size={13} />
                           Suggestions
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => showToast(`Added "${item.description}" to basket!`)}
-                          className="btn btn-primary"
-                          style={{ fontSize: '12px', padding: '6px 12px' }}
-                        >
-                          Add to Basket
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#2563eb' }}>
+                            ${Number(item.unit_price || 2.99).toFixed(2)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleAddToCart(item)}
+                            className="btn btn-primary"
+                            style={{ fontSize: '12px', padding: '6px 12px' }}
+                          >
+                            Add to Basket
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -653,6 +917,250 @@ export default function CustomerPortalPage() {
             )}
           </div>
         )}
+
+        {/* =================================================================== */}
+        {/* TAB 4: MY SHOPPING CART */}
+        {/* =================================================================== */}
+        {activeTab === 'cart' && (
+          <div>
+            <div className="card" style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShoppingCart size={20} color="#2563eb" />
+                    My Shopping Cart
+                  </h3>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>
+                    Review products added to your basket, adjust quantities, remove items, and view total pricing.
+                  </p>
+                </div>
+                {cart.items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearCart}
+                    className="btn btn-outline"
+                    style={{ fontSize: '12px', color: '#dc2626', borderColor: '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={14} />
+                    Clear Basket
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {cartLoading ? (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+                <div className="spinner" style={{ margin: '0 auto 12px auto' }}></div>
+                Loading your shopping basket...
+              </div>
+            ) : cart.items.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '56px 24px', backgroundColor: '#ffffff' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  backgroundColor: '#f1f5f9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px auto',
+                  color: '#94a3b8'
+                }}>
+                  <ShoppingCart size={32} />
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>
+                  Your Basket is Empty
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '440px', margin: '0 auto 20px auto' }}>
+                  You haven't added any products to your basket yet. Explore our store catalog or discover personalized recommendations!
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('browse')}
+                  className="btn btn-primary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
+                >
+                  <ShoppingBag size={16} />
+                  Start Shopping Catalog
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', alignItems: 'flex-start' }}>
+                {/* Cart Items Table List */}
+                <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 20px',
+                    borderBottom: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>
+                      Basket Items ({cart.items.length} {cart.items.length === 1 ? 'item' : 'items'})
+                    </span>
+                    <span className="badge badge-blue">
+                      {cart.totalQuantity} Total Units
+                    </span>
+                  </div>
+
+                  <div className="table-responsive">
+                    <table className="data-table" style={{ margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th>Product Details</th>
+                          <th style={{ textAlign: 'right' }}>Unit Price</th>
+                          <th style={{ textAlign: 'center' }}>Quantity</th>
+                          <th style={{ textAlign: 'right' }}>Subtotal</th>
+                          <th style={{ textAlign: 'center' }}>Remove</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cart.items.map((item) => (
+                          <tr key={item.cartItemId || item.productId}>
+                            <td style={{ minWidth: '200px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span className="badge badge-blue" style={{ fontSize: '10px', width: 'fit-content' }}>
+                                  SKU: {item.stockCode}
+                                </span>
+                                <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '13px' }}>
+                                  {item.description}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 600, color: '#334155' }}>
+                              ${Number(item.unitPrice).toFixed(2)}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateQuantity(item.cartItemId, item.quantity - 1)}
+                                  disabled={cartUpdatingId === item.cartItemId || item.quantity <= 1}
+                                  className="btn btn-outline"
+                                  style={{ padding: '3px 8px', minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  title="Decrease quantity"
+                                >
+                                  <Minus size={13} />
+                                </button>
+                                <span style={{
+                                  minWidth: '32px',
+                                  textAlign: 'center',
+                                  fontWeight: 700,
+                                  fontSize: '13px',
+                                  color: '#0f172a'
+                                }}>
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateQuantity(item.cartItemId, item.quantity + 1)}
+                                  disabled={cartUpdatingId === item.cartItemId}
+                                  className="btn btn-outline"
+                                  style={{ padding: '3px 8px', minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  title="Increase quantity"
+                                >
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: '#2563eb', fontSize: '14px' }}>
+                              ${Number(item.subtotal || (item.unitPrice * item.quantity)).toFixed(2)}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.cartItemId)}
+                                disabled={cartUpdatingId === item.cartItemId}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#ef4444',
+                                  cursor: 'pointer',
+                                  padding: '6px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                                title="Remove item from basket"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ padding: '14px 20px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('browse')}
+                      className="btn btn-outline"
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                    >
+                      <ArrowLeft size={15} />
+                      Continue Shopping
+                    </button>
+                  </div>
+                </div>
+
+                {/* Order Summary Card */}
+                <div className="card" style={{ padding: '22px' }}>
+                  <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: '0 0 16px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+                    Order Summary
+                  </h4>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px', color: '#475569', marginBottom: '18px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Unique Items</span>
+                      <strong style={{ color: '#0f172a' }}>{cart.items.length}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Total Units</span>
+                      <strong style={{ color: '#0f172a' }}>{cart.totalQuantity}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Subtotal</span>
+                      <strong style={{ color: '#0f172a' }}>${Number(cart.totalAmount).toFixed(2)}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Standard Shipping</span>
+                      <span className="badge badge-green" style={{ fontSize: '11px' }}>FREE</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Estimated Sales Tax</span>
+                      <strong style={{ color: '#0f172a' }}>$0.00</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '2px dashed #cbd5e1', paddingTop: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>Total Price</span>
+                    <span style={{ fontSize: '22px', fontWeight: 800, color: '#2563eb' }}>
+                      ${Number(cart.totalAmount).toFixed(2)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setOrderSuccessModal(true)}
+                    className="btn btn-primary"
+                    style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '14px', fontWeight: 600 }}
+                  >
+                    Proceed to Checkout
+                    <ArrowRight size={16} />
+                  </button>
+
+                  <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '11px', color: '#64748b' }}>
+                    Real-time basket management with Star Schema sync
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* =================================================================== */}
@@ -772,12 +1280,13 @@ export default function CustomerPortalPage() {
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#2563eb' }}>
+                            ${Number(rec.unit_price || 2.99).toFixed(2)}
+                          </span>
                           <button
                             type="button"
-                            onClick={() => {
-                              showToast(`Added "${rec.description}" to basket!`);
-                            }}
+                            onClick={() => handleAddToCart(rec)}
                             className="btn btn-primary"
                             style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
                           >
@@ -823,6 +1332,67 @@ export default function CustomerPortalPage() {
                 Done / Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order / Checkout Success Modal */}
+      {orderSuccessModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 60,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            maxWidth: '460px',
+            width: '100%',
+            padding: '28px',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid #e2e8f0'
+          }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: '#dcfce7',
+              color: '#16a34a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px auto'
+            }}>
+              <CheckCircle size={32} />
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>
+              Order Placed Successfully!
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 20px 0', lineHeight: 1.5 }}>
+              Thank you for shopping, <strong>{user?.fullName || user?.username}</strong>! Your order with <strong>{cart.totalQuantity} items</strong> totaling <strong>${Number(cart.totalAmount).toFixed(2)}</strong> has been processed into the sales pipeline.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                handleClearCart();
+                setOrderSuccessModal(false);
+                setActiveTab('browse');
+              }}
+              className="btn btn-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', fontSize: '13px' }}
+            >
+              Continue Shopping
+            </button>
           </div>
         </div>
       )}

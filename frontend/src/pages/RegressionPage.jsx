@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../api';
 import StatCard from '../components/StatCard';
-import VivaNote from '../components/VivaNote';
 import { TrendingUp, RefreshCw, Calculator } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -174,23 +173,6 @@ export default function RegressionPage() {
           </div>
         </>
       ) : null}
-
-      <VivaNote title="DWM Viva Focus: Evaluation Metrics for Regression">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-          <div>
-            <strong>MAE:</strong> (1/n) &Sigma; |y - &ycirc;| &mdash; Average magnitude of errors without penalizing outliers disproportionately.
-          </div>
-          <div>
-            <strong>MSE:</strong> (1/n) &Sigma; (y - &ycirc;)&sup2; &mdash; Squares errors, penalizing large discrepancies heavily.
-          </div>
-          <div>
-            <strong>RMSE:</strong> &radic;(MSE) &mdash; Brings the metric back into original dollar units ($).
-          </div>
-          <div>
-            <strong>R² Score:</strong> 1 - [SS_res / SS_tot] &mdash; Proportion of variance in target explained by predictors.
-          </div>
-        </div>
-      </VivaNote>
     </div>
   );
 }

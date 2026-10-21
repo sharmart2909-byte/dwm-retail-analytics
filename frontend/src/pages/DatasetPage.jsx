@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { datasetApi, warehouseApi } from '../api';
 import StatCard from '../components/StatCard';
 import VivaNote from '../components/VivaNote';
-import { Upload, CheckCircle2, AlertCircle, FileText, ArrowRight, Database, Sliders, RefreshCw, Eye } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, FileText, ArrowRight, Database, Sliders, RefreshCw, Eye, Check } from 'lucide-react';
 
 export default function DatasetPage() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -16,23 +16,48 @@ export default function DatasetPage() {
   const [error, setError] = useState(null);
 
   const canonicalFields = [
-    { key: 'InvoiceNo', label: 'Invoice / Order ID', required: true },
-    { key: 'StockCode', label: 'Product SKU / Code', required: true },
-    { key: 'Description', label: 'Product Description', required: true },
-    { key: 'Quantity', label: 'Quantity Purchased', required: true },
-    { key: 'UnitPrice', label: 'Unit Price / Rate', required: true },
-    { key: 'InvoiceDate', label: 'Transaction Date', required: false },
-    { key: 'CustomerID', label: 'Customer Identifier', required: false },
-    { key: 'Country', label: 'Customer Country', required: false },
+    { key: 'InvoiceNo', label: 'Invoice / Order ID', desc: 'Identifies the transaction order (synthesized if missing)' },
+    { key: 'StockCode', label: 'Product SKU / Code', desc: 'Unique product code (auto-derived from description if missing)' },
+    { key: 'Description', label: 'Product Description / Name', desc: 'Product name or title (auto-derived if missing)' },
+    { key: 'Quantity', label: 'Quantity Purchased', desc: 'Number of units (defaults to 1 if missing)' },
+    { key: 'UnitPrice', label: 'Unit Price / Rate', desc: 'Price per unit or derived from sales amount (defaults to 9.99 if missing)' },
+    { key: 'InvoiceDate', label: 'Transaction Date', desc: 'Date of transaction (defaults to current date if missing)' },
+    { key: 'CustomerID', label: 'Customer Identifier', desc: 'Customer ID or account code (synthesized if missing)' },
+    { key: 'Country', label: 'Customer Country / Region', desc: 'Customer location (defaults to Global if missing)' },
   ];
+
+  const triggerInspectFile = async (file) => {
+    setLoading(true);
+    setError(null);
+    setSyncStatus(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await datasetApi.inspectDataset(formData);
+      const insp = res.data?.inspection;
+      setInspection(res.data);
+      if (insp?.detected_mapping) {
+        setColumnMapping(insp.detected_mapping);
+      }
+    } catch (err) {
+      console.error(err);
+      const detail = err.response?.data?.error || err.response?.data?.detail || err.message;
+      setError(`Inspection failed: ${detail}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      setSelectedFile(file);
       setInspection(null);
       setResult(null);
       setError(null);
       setSyncStatus(null);
+      // Automatically inspect the file immediately upon selection
+      triggerInspectFile(file);
     }
   };
 
@@ -82,11 +107,15 @@ export default function DatasetPage() {
 
   const handleSyncToWarehouse = async () => {
     setCommitting(true);
-    setSyncStatus(commitMode === 'append' ? 'Staging records & appending to MySQL star schema...' : 'Staging records & executing safe transactional warehouse swap...');
+    setSyncStatus(commitMode === 'append' ? 'Validating and appending records into MySQL Star Schema...' : 'Validating and executing clean transactional swap into MySQL Star Schema...');
     try {
       const res = await warehouseApi.syncEtl(commitMode);
       const data = res.data;
-      setSyncStatus(`Successfully validated and committed ${data.facts_ingested} sales into MySQL Star Schema! (Mode: ${commitMode.toUpperCase()}, Skipped: ${data.facts_skipped || 0})`);
+      setSyncStatus(
+        `Successfully validated and committed ${data.facts_ingested} sales transactions into MySQL Star Schema! ` +
+        `(Mode: ${commitMode.toUpperCase()}, Products: ${data.products_ingested}, Customers: ${data.customers_ingested}, Revenue: $${Number(data.total_revenue || 0).toLocaleString()}). ` +
+        `All project modules (Executive Dashboard, Data Warehouse, OLAP Analysis, Visualization, Customer Segmentation, Recommendations, Regression, Naive Bayes, and Comparison) are now updated and using the new dataset.`
+      );
     } catch (err) {
       console.error(err);
       setSyncStatus(`ETL sync failed: ${err.response?.data?.message || err.message}. Previous warehouse data preserved.`);
@@ -104,7 +133,7 @@ export default function DatasetPage() {
       <div className="page-header">
         <h2 className="page-title">Dataset Upload, Column Mapping & Safe ETL Pipeline</h2>
         <p className="page-desc">
-          Upload CSV or Excel (.xlsx) files, inspect and map columns, validate cleaning metrics, and safely commit to the MySQL star schema.
+          Upload CSV or Excel (.xlsx) files with ANY filename and column names. Flexible column auto-detection and mapping ensures seamless ETL into MySQL.
         </p>
       </div>
 
@@ -117,9 +146,9 @@ export default function DatasetPage() {
 
       {/* Step 1: Upload and Inspection Controls */}
       <div className="card" style={{ marginBottom: '20px' }}>
-        <h3 className="card-title">1. Select Dataset (CSV or Excel .xlsx)</h3>
+        <h3 className="card-title">1. Select Dataset (Supports Any Filename & Column Names)</h3>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-          Supports standard retail formats, CSV (with UTF-8, UTF-8 BOM, ISO-8859-1 encodings), and Excel (.xlsx) workbooks.
+          Upload any CSV (with comma, semicolon, tab delimiters; UTF-8 or Latin1 encodings) or Excel (.xlsx) file. Columns will be inspected automatically.
         </p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
@@ -136,7 +165,7 @@ export default function DatasetPage() {
             disabled={loading || !selectedFile}
           >
             <Eye size={16} />
-            {loading ? 'Inspecting...' : 'Inspect & Detect Columns'}
+            {loading ? 'Inspecting...' : 'Re-Inspect Columns'}
           </button>
           <button
             className="btn btn-primary"
@@ -183,38 +212,51 @@ export default function DatasetPage() {
             </span>
           </div>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            Our smart recognition engine auto-detected source columns. You can manually adjust any field mapping below before processing:
+            Our smart recognition engine automatically matched columns from your uploaded file. You can adjust mappings or choose <strong>Auto-Detect / Synthesize</strong> for any missing field:
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px', marginBottom: '16px' }}>
-            {canonicalFields.map((f) => (
-              <div key={f.key} style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)' }}>
-                    {f.label}
-                  </span>
-                  {f.required ? (
-                    <span className="badge badge-red" style={{ fontSize: '10px' }}>Required</span>
-                  ) : (
-                    <span className="badge badge-yellow" style={{ fontSize: '10px' }}>Optional</span>
-                  )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+            {canonicalFields.map((f) => {
+              const mappedCol = columnMapping[f.key];
+              const isMapped = mappedCol && mappedCol.trim() !== '';
+              return (
+                <div key={f.key} style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)' }}>
+                      {f.label}
+                    </span>
+                    {isMapped ? (
+                      <span className="badge badge-green" style={{ fontSize: '10px' }}>
+                        <Check size={10} style={{ display: 'inline', marginRight: '2px' }} />
+                        Mapped: {mappedCol}
+                      </span>
+                    ) : (
+                      <span className="badge badge-blue" style={{ fontSize: '10px' }}>
+                        Auto-Synthesized
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    className="select-field"
+                    style={{ width: '100%', fontSize: '12px', marginBottom: '4px' }}
+                    value={columnMapping[f.key] || ''}
+                    onChange={(e) => setColumnMapping({ ...columnMapping, [f.key]: e.target.value })}
+                  >
+                    <option value="">-- Auto-Detect / Synthesize Default --</option>
+                    {rawColumns.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{f.desc}</div>
                 </div>
-                <select
-                  className="select-field"
-                  style={{ width: '100%', fontSize: '12px' }}
-                  value={columnMapping[f.key] || ''}
-                  onChange={(e) => setColumnMapping({ ...columnMapping, [f.key]: e.target.value })}
-                >
-                  <option value="">-- Do Not Map / Use Default --</option>
-                  {rawColumns.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
+              &bull; Compatible with any dataset structure: missing fields will be automatically synthesized with realistic values.
+            </span>
             <button
               className="btn btn-primary"
               onClick={() => handlePreprocess(!selectedFile)}
@@ -231,7 +273,7 @@ export default function DatasetPage() {
       {summary && (
         <div style={{ marginBottom: '24px' }}>
           <div className="card" style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h4 style={{ margin: 0, color: '#166534', fontWeight: 600 }}>
                   <CheckCircle2 size={18} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} />
@@ -258,12 +300,12 @@ export default function DatasetPage() {
                   disabled={committing || loading}
                 >
                   <Database size={16} />
-                  {committing ? 'Committing...' : 'Sync into MySQL Data Warehouse'}
+                  {committing ? 'Synchronizing...' : 'Sync into MySQL Data Warehouse'}
                 </button>
               </div>
             </div>
             {syncStatus && (
-              <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#ffffff', borderRadius: '6px', fontSize: '13px', fontWeight: 600, color: '#166534', border: '1px solid #bbf7d0' }}>
+              <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#ffffff', borderRadius: '6px', fontSize: '13px', fontWeight: 600, color: '#166534', border: '1px solid #bbf7d0', lineHeight: '1.5' }}>
                 {syncStatus}
               </div>
             )}
@@ -302,9 +344,9 @@ export default function DatasetPage() {
               </div>
             </div>
             <div className="card" style={{ padding: '14px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Missing Customer IDs Cleaned:</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Unique Customers Identified:</div>
               <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)' }}>
-                {summary.missing_customer_id_removed?.toLocaleString()}
+                {summary.unique_customers?.toLocaleString()}
               </div>
             </div>
             <div className="card" style={{ padding: '14px' }}>
@@ -368,14 +410,14 @@ export default function DatasetPage() {
 
       <VivaNote title="DWM Viva Focus: Data Cleaning & Preprocessing Workflow">
         <p>
-          <strong>ETL Data Cleaning Pipeline:</strong> Real-world retail datasets contain noisy, missing, and duplicate records.
+          <strong>ETL Data Cleaning Pipeline:</strong> Real-world retail datasets contain noisy, missing, and duplicate records with diverse schemas.
           Our automated pipeline handles:
         </p>
         <ul style={{ marginTop: '6px', paddingLeft: '20px', lineHeight: '1.6' }}>
-          <li><strong>Missing Value Imputation:</strong> Dropping unidentifiable transactions or assigning synthetic identifiers.</li>
-          <li><strong>Outlier & Cancellation Removal:</strong> Filtering records starting with 'C' and negative quantities.</li>
-          <li><strong>Deduplication:</strong> Eliminating exact transaction duplicates to prevent double-counting revenue.</li>
-          <li><strong>Dimensional Key Assignment:</strong> Resolving surrogate keys before inserting facts into the star schema.</li>
+          <li><strong>Flexible Column Mapping:</strong> Dynamically recognizes any column headers and synthesizes missing attributes.</li>
+          <li><strong>Outlier & Cancellation Removal:</strong> Filters negative quantities and cancellation codes.</li>
+          <li><strong>Deduplication:</strong> Eliminates duplicate transactions to maintain measure integrity.</li>
+          <li><strong>Dimensional Key Assignment:</strong> Resolves surrogate keys before batch inserting into the MySQL star schema.</li>
         </ul>
       </VivaNote>
     </div>

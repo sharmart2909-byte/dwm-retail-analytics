@@ -17,6 +17,11 @@ public class OlapController {
         this.olapService = olapService;
     }
 
+    @GetMapping("/options")
+    public ResponseEntity<Map<String, Object>> getOlapOptions() {
+        return ResponseEntity.ok(olapService.getOlapOptions());
+    }
+
     @GetMapping("/rollup")
     public ResponseEntity<Map<String, Object>> getRollup(
             @RequestParam(value = "dimension", defaultValue = "time") String dimension) {
@@ -25,23 +30,23 @@ public class OlapController {
 
     @GetMapping("/drilldown")
     public ResponseEntity<Map<String, Object>> getDrilldown(
-            @RequestParam(value = "year", defaultValue = "2011") Integer year,
-            @RequestParam(value = "month", defaultValue = "12") Integer month) {
+            @RequestParam(value = "year", required = false) Integer year,
+            @RequestParam(value = "month", required = false) Integer month) {
         return ResponseEntity.ok(olapService.executeDrillDown(year, month));
     }
 
     @GetMapping("/slice")
     public ResponseEntity<Map<String, Object>> getSlice(
             @RequestParam(value = "dimension", defaultValue = "country") String dimension,
-            @RequestParam(value = "value", defaultValue = "United Kingdom") String value) {
+            @RequestParam(value = "value", required = false) String value) {
         return ResponseEntity.ok(olapService.executeSlice(dimension, value));
     }
 
     @GetMapping("/dice")
     public ResponseEntity<Map<String, Object>> getDice(
             @RequestParam(value = "countries", required = false) String countries,
-            @RequestParam(value = "quarter", defaultValue = "4") Integer quarter,
-            @RequestParam(value = "year", defaultValue = "2011") Integer year) {
+            @RequestParam(value = "quarter", required = false) Integer quarter,
+            @RequestParam(value = "year", required = false) Integer year) {
         return ResponseEntity.ok(olapService.executeDice(countries, quarter, year));
     }
 }

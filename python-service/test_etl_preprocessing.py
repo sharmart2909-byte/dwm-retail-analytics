@@ -53,15 +53,19 @@ INV002,15.00,SKU88,LUXURY TEA,2,CUST101,Germany,2011-11-16
         cleaned, summary = self.preprocessor.preprocess(df)
         self.assertEqual(len(cleaned), 2)
 
-    def test_missing_required_column_raises_error(self):
-        # Missing Quantity and UnitPrice
-        csv_data = b"""InvoiceNo,StockCode,Description
-10001,P01,Item One
+    def test_flexible_columns_and_synthesis(self):
+        # CSV with arbitrary column names and without strict StockCode/Description
+        csv_data = b"""Order_ID,Product_Name,Sale_Amount
+10001,Item One,25.50
+10002,Item Two,50.00
 """
         df = self.preprocessor.load_from_bytes(csv_data)
-        with self.assertRaises(ValueError) as ctx:
-            self.preprocessor.preprocess(df)
-        self.assertIn("Missing required column", str(ctx.exception))
+        cleaned, summary = self.preprocessor.preprocess(df)
+        self.assertEqual(len(cleaned), 2)
+        self.assertIn('StockCode', cleaned.columns)
+        self.assertIn('Description', cleaned.columns)
+        self.assertIn('Quantity', cleaned.columns)
+        self.assertIn('UnitPrice', cleaned.columns)
 
     def test_cancellations_and_negative_quantities_filtered(self):
         csv_data = b"""InvoiceNo,StockCode,Description,Quantity,UnitPrice,CustomerID

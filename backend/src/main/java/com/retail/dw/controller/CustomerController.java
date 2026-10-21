@@ -60,15 +60,25 @@ public class CustomerController {
         String sql;
         List<Map<String, Object>> products;
         if (search != null && !search.isBlank()) {
-            sql = "SELECT product_id, stock_code, description FROM dim_product " +
+            sql = "SELECT product_id, stock_code, description, COALESCE(unit_price, 2.99) as unit_price FROM dim_product " +
                     "WHERE description LIKE ? OR stock_code LIKE ? LIMIT ?";
             String pattern = "%" + search.trim() + "%";
             products = jdbcTemplate.queryForList(sql, pattern, pattern, limit);
         } else {
-            sql = "SELECT product_id, stock_code, description FROM dim_product ORDER BY description ASC LIMIT ?";
+            sql = "SELECT product_id, stock_code, description, COALESCE(unit_price, 2.99) as unit_price FROM dim_product ORDER BY description ASC LIMIT ?";
             products = jdbcTemplate.queryForList(sql, limit);
         }
         return ResponseEntity.ok(products);
+    }
+
+    @GetMapping("/products/{id}")
+    public ResponseEntity<?> getProductDetails(@PathVariable("id") Integer id) {
+        String sql = "SELECT product_id, stock_code, description, COALESCE(unit_price, 2.99) as unit_price FROM dim_product WHERE product_id = ? LIMIT 1";
+        List<Map<String, Object>> list = jdbcTemplate.queryForList(sql, id);
+        if (list.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Product not found"));
+        }
+        return ResponseEntity.ok(list.get(0));
     }
 
     @GetMapping("/recommendations")
@@ -121,9 +131,9 @@ public class CustomerController {
             // New customer without purchase history
             List<Map<String, Object>> bestsellers = Collections.emptyList();
             try {
-                String bestsellerSql = "SELECT p.stock_code, p.description, SUM(f.quantity) as total_sold " +
+                String bestsellerSql = "SELECT p.product_id, p.stock_code, p.description, COALESCE(p.unit_price, 2.99) as unit_price, SUM(f.quantity) as total_sold " +
                         "FROM fact_sales f JOIN dim_product p ON f.product_id = p.product_id " +
-                        "GROUP BY p.stock_code, p.description ORDER BY total_sold DESC LIMIT 6";
+                        "GROUP BY p.product_id, p.stock_code, p.description, p.unit_price ORDER BY total_sold DESC LIMIT 6";
                 bestsellers = jdbcTemplate.queryForList(bestsellerSql);
             } catch (Exception ignored) {}
 
@@ -153,6 +163,24 @@ public class CustomerController {
                 dataMap.put("personalized_reason", "Recommended based on your past purchase: " + basisProductDescription + " (SKU: " + targetCode + ")");
             } else if (isExplicitStockCode) {
                 dataMap.put("personalized_reason", "Frequently purchased together with: " + (basisProductDescription.isBlank() ? targetCode : basisProductDescription));
+            }
+
+            // Enrich recommendations with product_id and unit_price
+            if (dataMap.containsKey("recommendations") && dataMap.get("recommendations") instanceof List) {
+                List<Map<String, Object>> recList = (List<Map<String, Object>>) dataMap.get("recommendations");
+                for (Map<String, Object> item : recList) {
+                    if (item.containsKey("stock_code")) {
+                        String sc = String.valueOf(item.get("stock_code"));
+                        try {
+                            List<Map<String, Object>> pInfo = jdbcTemplate.queryForList(
+                                    "SELECT product_id, COALESCE(unit_price, 2.99) as unit_price FROM dim_product WHERE stock_code = ? LIMIT 1", sc);
+                            if (!pInfo.isEmpty()) {
+                                item.put("product_id", pInfo.get(0).get("product_id"));
+                                item.put("unit_price", pInfo.get(0).get("unit_price"));
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                }
             }
         }
         return ResponseEntity.ok(recResult);

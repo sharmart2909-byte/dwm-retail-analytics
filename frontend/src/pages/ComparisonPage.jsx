@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../api';
 import StatCard from '../components/StatCard';
-import VivaNote from '../components/VivaNote';
 import { GitCompare, RefreshCw, Scale } from 'lucide-react';
 
 export default function ComparisonPage() {
@@ -155,18 +154,6 @@ export default function ComparisonPage() {
           )}
         </>
       ) : null}
-
-      <VivaNote title="DWM Viva Focus: Algorithm Trade-offs & Selection Justification">
-        <p>
-          In Data Warehousing & Data Mining exams, examiners frequently ask: <em>"Why choose K-Means over Agglomerative?"</em> or <em>"Is Multiple Regression always better than Simple Regression?"</em>
-        </p>
-        <p style={{ marginTop: '6px' }}>
-          <strong>Clustering:</strong> K-Means is computationally fast and well-suited for spherical clusters with known k. Agglomerative clustering does not require pre-specifying k beforehand (dendrogram cut) and handles arbitrary cluster shapes, but has high O(n²) memory overhead.
-        </p>
-        <p style={{ marginTop: '6px' }}>
-          <strong>Regression:</strong> Multiple Linear Regression incorporates complementary features like Unit Price and seasonality (Month), capturing multivariate interaction effects that Simple Regression omits.
-        </p>
-      </VivaNote>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../api';
 import StatCard from '../components/StatCard';
-import VivaNote from '../components/VivaNote';
 import { Binary, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 export default function NaiveBayesPage() {
@@ -202,23 +201,6 @@ export default function NaiveBayesPage() {
           </div>
         </>
       ) : null}
-
-      <VivaNote title="DWM Viva Focus: Naive Bayes Foundations & Classification Metrics">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-          <div>
-            <strong>Bayes Theorem:</strong> P(C|X) = [P(X|C) * P(C)] / P(X) computes posterior probability from prior probability and likelihood.
-          </div>
-          <div>
-            <strong>Naive Independence:</strong> Assumes features X1, X2, ... Xn are conditionally independent given class C.
-          </div>
-          <div>
-            <strong>Precision vs Recall:</strong> Precision = TP / (TP + FP) (exactness); Recall = TP / (TP + FN) (completeness).
-          </div>
-          <div>
-            <strong>F1-Score:</strong> Harmonic mean 2 * (Precision * Recall) / (Precision + Recall) giving a single balanced benchmark.
-          </div>
-        </div>
-      </VivaNote>
     </div>
   );
 }

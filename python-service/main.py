@@ -36,24 +36,52 @@ app.add_middleware(
 # Global preprocessor holding current dataset state
 preprocessor = DataPreprocessor()
 DEFAULT_CSV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "online_retail_sample.csv"))
+ACTIVE_CSV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "active_cleaned_dataset.csv"))
+ACTIVE_SUMMARY_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "active_summary.json"))
 
-# Bootstrap with default dataset on startup if available
 def get_current_df() -> pd.DataFrame:
+    """
+    Returns the active working dataset.
+    Prioritizes:
+    1. Preprocessor in-memory cleaned dataframe
+    2. Persisted active_cleaned_dataset.csv (from recent upload)
+    3. Bundled online_retail_sample.csv as fallback
+    """
     if preprocessor.cleaned_df is not None:
         return preprocessor.cleaned_df
+
+    if os.path.exists(ACTIVE_CSV_PATH):
+        try:
+            df = preprocessor.load_from_path(ACTIVE_CSV_PATH)
+            df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(1).astype(int)
+            df['UnitPrice'] = pd.to_numeric(df['UnitPrice'], errors='coerce').fillna(1.0).astype(float)
+            df['TotalAmount'] = (df['Quantity'] * df['UnitPrice']).round(2)
+            df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], errors='coerce').fillna(pd.Timestamp.now())
+            preprocessor.cleaned_df = df
+            if os.path.exists(ACTIVE_SUMMARY_PATH):
+                import json
+                with open(ACTIVE_SUMMARY_PATH, 'r') as sf:
+                    preprocessor.last_summary = json.load(sf)
+            return df
+        except Exception as e:
+            print(f"Warning: Failed to load active_cleaned_dataset.csv: {e}")
+
     if os.path.exists(DEFAULT_CSV_PATH):
         df = preprocessor.load_from_path(DEFAULT_CSV_PATH)
         cleaned_df, _ = preprocessor.preprocess(df)
         return cleaned_df
+
     raise HTTPException(status_code=400, detail="No dataset loaded. Please upload a dataset first.")
 
 @app.get("/health")
 def health_check():
+    has_active = os.path.exists(ACTIVE_CSV_PATH) or preprocessor.cleaned_df is not None
     return {
         "status": "healthy",
         "service": "Python FastAPI Data Mining Service",
-        "has_data": preprocessor.cleaned_df is not None or os.path.exists(DEFAULT_CSV_PATH),
-        "data_rows": len(preprocessor.cleaned_df) if preprocessor.cleaned_df is not None else 0
+        "has_data": has_active or os.path.exists(DEFAULT_CSV_PATH),
+        "data_rows": len(preprocessor.cleaned_df) if preprocessor.cleaned_df is not None else 0,
+        "active_dataset": "custom_upload" if os.path.exists(ACTIVE_CSV_PATH) else "default_sample"
     }
 
 @app.post("/api/data/inspect")

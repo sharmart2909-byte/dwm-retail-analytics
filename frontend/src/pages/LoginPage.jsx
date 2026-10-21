@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, ShoppingBag, Lock, User, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
+import { ShieldCheck, ShoppingBag, Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const [mode, setMode] = useState('ADMIN'); // 'ADMIN' or 'CUSTOMER'
   const [isRegistering, setIsRegistering] = useState(false);
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('Admin@123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [error, setError] = useState(null);
@@ -20,13 +20,8 @@ export default function LoginPage() {
     setMode(newMode);
     setIsRegistering(false);
     setError(null);
-    if (newMode === 'ADMIN') {
-      setUsername('admin');
-      setPassword('Admin@123');
-    } else {
-      setUsername('customer1');
-      setPassword('Customer@123');
-    }
+    setUsername('');
+    setPassword('');
   };
 
   const handleSubmit = async (e) => {
@@ -257,28 +252,6 @@ export default function LoginPage() {
               </button>
             </div>
           )}
-
-          {/* Demo Credentials Pill */}
-          <div style={{
-            marginTop: '20px',
-            padding: '12px',
-            backgroundColor: '#f8fafc',
-            borderRadius: '6px',
-            border: '1px dashed #cbd5e1',
-            fontSize: '12px',
-            color: '#475569'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '4px' }}>
-              <Sparkles size={14} color="#3b82f6" />
-              Demo Credentials Available:
-            </div>
-            <div>
-              <strong>Admin:</strong> <code>admin</code> / <code>Admin@123</code>
-            </div>
-            <div>
-              <strong>Customer:</strong> <code>customer1</code> / <code>Customer@123</code> (ID: 17850)
-            </div>
-          </div>
         </div>
       </div>
     </div>
